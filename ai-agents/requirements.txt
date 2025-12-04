@@ -1,0 +1,25 @@
+# requirements.txt
+# Core dependencies for Multi-Agent Marketing Orchestrator
+
+# Flask for webhook server
+flask==3.0.0
+flask-cors==4.0.0
+
+# Fetch.ai AgentVerse
+uagents
+uagents-core==0.1.0
+
+# CrewAI and AI dependencies
+crewai==0.28.8
+crewai-tools==0.1.6
+langchain==0.1.0
+langchain-openai==0.0.5
+openai==1.12.0
+
+# Utilities
+python-dotenv==1.0.0
+pydantic==2.5.0
+requests==2.31.0
+
+# Logging
+loguru==0.7.2

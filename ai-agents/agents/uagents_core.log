@@ -1,0 +1,68 @@
+2025-10-14 08:59:13,253 uagents_core.utils.registration INFO Registering with Almanac API
+2025-10-14 08:59:16,001 uagents_core.utils.registration ERROR Could not validate credentials
+Traceback (most recent call last):
+  File "C:\Users\daksh\OneDrive\Documents\GitHub\Marketing-Orchestator\venv\Lib\site-packages\uagents_core\utils\registration.py", line 143, in _send_http_request_agentverse
+    response.raise_for_status()
+  File "C:\Users\daksh\OneDrive\Documents\GitHub\Marketing-Orchestator\venv\Lib\site-packages\requests\models.py", line 1026, in raise_for_status
+    raise HTTPError(http_error_msg, response=self)
+requests.exceptions.HTTPError: 401 Client Error: Unauthorized for url: https://agentverse.ai/v1/agents
+2025-10-14 09:13:22,283 uagents_core.utils.registration INFO Registering with Almanac API
+2025-10-14 09:49:59,881 uagents_core.utils.registration INFO Registering with Almanac API
+2025-10-14 16:04:00,561 uagents_core.utils.registration INFO Registering with Almanac API
+2025-10-14 16:21:27,780 uagents_core.utils.registration INFO Registering with Almanac API
+2025-10-14 16:34:39,426 uagents_core.utils.registration INFO Registering with Almanac API
+2025-10-14 16:40:13,885 uagents_core.utils.registration INFO Registering with Almanac API
+2025-10-14 16:49:40,520 uagents_core.utils.registration INFO Registering with Almanac API
+2025-10-14 17:30:01,466 uagents_core.utils.registration INFO Registering with Almanac API
+2025-10-14 17:30:58,236 uagents_core.utils.resolver INFO Got response looking up agent endpoint
+2025-10-14 17:31:11,414 uagents_core.utils.resolver INFO Got response looking up agent endpoint
+2025-10-20 10:29:19,039 uagents_core.utils.registration INFO Registering with Almanac API
+2025-10-20 10:47:31,498 uagents_core.utils.registration INFO Registering with Almanac API
+2025-10-20 10:49:15,096 uagents_core.utils.resolver INFO Got response looking up agent endpoint
+2025-10-20 10:49:32,573 uagents_core.utils.resolver INFO Got response looking up agent endpoint
+2025-10-20 10:49:37,454 uagents_core.utils.resolver INFO Got response looking up agent endpoint
+2025-10-20 10:55:48,009 uagents_core.utils.registration INFO Registering with Almanac API
+2025-10-20 10:56:10,008 uagents_core.utils.resolver INFO Got response looking up agent endpoint
+2025-10-20 10:56:28,592 uagents_core.utils.resolver INFO Got response looking up agent endpoint
+2025-10-20 10:56:50,611 uagents_core.utils.resolver INFO Got response looking up agent endpoint
+2025-10-20 11:00:34,733 uagents_core.utils.resolver INFO Got response looking up agent endpoint
+2025-10-20 11:00:46,235 uagents_core.utils.resolver INFO Got response looking up agent endpoint
+2025-10-20 15:43:02,605 uagents_core.utils.registration INFO Registering with Almanac API
+2025-10-20 15:45:16,464 uagents_core.utils.resolver INFO Got response looking up agent endpoint
+2025-10-20 15:46:02,165 uagents_core.utils.resolver INFO Got response looking up agent endpoint
+2025-10-27 18:33:26,644 uagents_core.utils.registration INFO Registering with Almanac API
+2025-10-27 18:37:29,431 uagents_core.utils.resolver INFO Got response looking up agent endpoint
+2025-10-28 11:08:34,909 uagents_core.utils.registration INFO Registering with Almanac API
+2025-10-28 11:09:09,415 uagents_core.utils.resolver INFO Got response looking up agent endpoint
+2025-10-29 12:42:43,071 uagents_core.utils.registration INFO Registering with Almanac API
+2025-10-29 12:42:56,432 uagents_core.utils.resolver INFO Got response looking up agent endpoint
+2025-10-29 12:43:48,634 uagents_core.utils.resolver INFO Got response looking up agent endpoint
+2025-10-31 10:58:03,183 uagents_core.utils.registration INFO Registering with Almanac API
+2025-10-31 10:58:13,824 uagents_core.utils.registration WARNING failed to upload agent details. Operation timed out.
+2025-10-31 10:58:30,129 uagents_core.utils.resolver INFO Got response looking up agent endpoint
+2025-10-31 10:59:18,827 uagents_core.utils.resolver INFO Got response looking up agent endpoint
+2025-10-31 11:04:52,745 uagents_core.utils.registration INFO Registering with Almanac API
+2025-10-31 11:05:03,399 uagents_core.utils.registration WARNING failed to upload agent details. Operation timed out.
+2025-10-31 11:05:47,837 uagents_core.utils.resolver INFO Got response looking up agent endpoint
+2025-11-07 16:23:20,327 uagents_core.utils.registration INFO Registering with Almanac API
+2025-11-07 16:23:31,151 uagents_core.utils.resolver INFO Got response looking up agent endpoint
+2025-11-07 16:24:10,298 uagents_core.utils.resolver INFO Got response looking up agent endpoint
+2025-11-07 16:37:00,485 uagents_core.utils.registration INFO Registering with Almanac API
+2025-11-07 16:37:32,953 uagents_core.utils.resolver INFO Got response looking up agent endpoint
+2025-11-07 16:38:06,705 uagents_core.utils.resolver INFO Got response looking up agent endpoint
+2025-11-07 16:44:07,813 uagents_core.utils.registration INFO Registering with Almanac API
+2025-11-07 16:44:11,476 uagents_core.utils.resolver INFO Got response looking up agent endpoint
+2025-11-07 16:44:37,552 uagents_core.utils.resolver INFO Got response looking up agent endpoint
+2025-11-07 16:48:34,207 uagents_core.utils.resolver INFO Got response looking up agent endpoint
+2025-11-07 16:48:52,566 uagents_core.utils.resolver INFO Got response looking up agent endpoint
+2025-11-07 16:50:06,427 uagents_core.utils.registration INFO Registering with Almanac API
+2025-11-07 16:50:11,899 uagents_core.utils.resolver INFO Got response looking up agent endpoint
+2025-11-07 16:50:44,595 uagents_core.utils.resolver INFO Got response looking up agent endpoint
+2025-11-07 16:54:34,817 uagents_core.utils.resolver INFO Got response looking up agent endpoint
+2025-11-07 16:55:01,420 uagents_core.utils.resolver INFO Got response looking up agent endpoint
+2025-11-07 16:57:16,394 uagents_core.utils.resolver INFO Got response looking up agent endpoint
+2025-11-07 16:57:33,323 uagents_core.utils.resolver INFO Got response looking up agent endpoint
+2025-11-07 17:01:09,144 uagents_core.utils.resolver INFO Got response looking up agent endpoint
+2025-11-07 17:01:25,295 uagents_core.utils.resolver INFO Got response looking up agent endpoint
+2025-11-07 17:02:19,145 uagents_core.utils.resolver INFO Got response looking up agent endpoint
+2025-11-07 17:02:36,131 uagents_core.utils.resolver INFO Got response looking up agent endpoint

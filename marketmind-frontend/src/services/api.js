@@ -47,7 +47,8 @@ export const login = async (email, password) => {
 export const getCurrentUser = async () => {
   try {
     const response = await api.get('/auth/me');
-    return response.data;
+    // Backend returns { success: true, user: {...} }
+    return response.data.user || response.data;
   } catch (error) {
     console.error('Error fetching current user:', error);
     throw error;
@@ -56,4 +57,29 @@ export const getCurrentUser = async () => {
 
 export const logout = () => {
   localStorage.removeItem('token');
+};
+
+// AI Campaign Generation API
+const AI_API_URL = import.meta.env.VITE_AI_API_URL || 'http://localhost:8001';
+
+export const generateCampaign = async (prompt) => {
+  try {
+    const response = await fetch(`${AI_API_URL}/api/generate-campaign`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ prompt }),
+    });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to generate campaign');
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Campaign generation error:', error);
+    throw error;
+  }
 };

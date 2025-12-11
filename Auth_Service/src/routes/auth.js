@@ -1,5 +1,5 @@
 const express = require('express');
-const { body } = require('express-validator');
+const { body, validationResult } = require('express-validator');
 const {
   register,
   login,
@@ -7,6 +7,7 @@ const {
   logout
 } = require('../controllers/authController');
 const { protect } = require('../middleware/auth');
+const { createError } = require('../utils/error');
 
 const router = express.Router();
 
@@ -47,6 +48,15 @@ router.get(
   }
 );
 
+// Validation middleware
+const validate = (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return next(createError(400, errors.array()[0].msg));
+  }
+  next();
+};
+
 // Public routes
 router.post(
   '/register',
@@ -55,6 +65,7 @@ router.post(
     body('password', 'Please enter a password with 8 or more characters').isLength({ min: 8 }),
     body('fullname', 'Please include a name').not().isEmpty()
   ],
+  validate,
   register
 );
 
@@ -64,6 +75,7 @@ router.post(
     body('email', 'Please include a valid email').isEmail(),
     body('password', 'Password is required').exists()
   ],
+  validate,
   login
 );
 

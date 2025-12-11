@@ -30,8 +30,9 @@ useEffect(() => {
         throw new Error('Invalid or expired token');
       }
 
-      const userData = await response.json();
-      setUser(userData);
+      const data = await response.json();
+      // Backend returns { success: true, user: {...} }
+      setUser(data.user || data);
     } catch (error) {
       console.error('Failed to load user:', error);
       localStorage.removeItem('token'); // Clear invalid token

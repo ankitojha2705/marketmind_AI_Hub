@@ -4,7 +4,7 @@ const { jwtSecret, jwtExpire } = require('../config');
 // Generate JWT token
 const signToken = (id) => {
   return jwt.sign({ id }, jwtSecret, {
-    expiresIn: jwtExpire
+    expiresIn: jwtExpire || '30d' // Default to 30 days if not set
   });
 };
 

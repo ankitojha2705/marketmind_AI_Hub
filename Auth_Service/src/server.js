@@ -32,7 +32,11 @@ app.get('/', (req, res) => {
   res.send('Auth Service API is running...');
 });
 
-app.listen(PORT, () => {
+// Error handler middleware (must be after routes)
+const { errorHandler } = require('./utils/error');
+app.use(errorHandler);
+
+const server = app.listen(PORT, () => {
   console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
   console.log(`MongoDB URI: ${process.env.MONGODB_URI}`);
 });

@@ -85,10 +85,26 @@ const nice = (dateString) => {
 const formatTimeLeft = (dateString) => {
   const date = new Date(dateString);
   const now = new Date();
-  const diffInHours = Math.ceil((date - now) / (1000 * 60 * 60));
+  const diffInMs = date - now;
+  const diffInHours = Math.ceil(diffInMs / (1000 * 60 * 60));
   
+  // Handle past dates
+  if (diffInMs < 0) {
+    const absDiffInHours = Math.abs(diffInHours);
+    if (absDiffInHours < 1) {
+      const diffInMinutes = Math.abs(Math.ceil(diffInMs / (1000 * 60)));
+      return `${diffInMinutes} ${diffInMinutes === 1 ? 'minute' : 'minutes'} ago`;
+    } else if (absDiffInHours < 24) {
+      return `${absDiffInHours} ${absDiffInHours === 1 ? 'hour' : 'hours'} ago`;
+    } else {
+      const diffInDays = Math.ceil(absDiffInHours / 24);
+      return `${diffInDays} ${diffInDays === 1 ? 'day' : 'days'} ago`;
+    }
+  }
+  
+  // Handle future dates
   if (diffInHours < 1) {
-    const diffInMinutes = Math.ceil((date - now) / (1000 * 60));
+    const diffInMinutes = Math.ceil(diffInMs / (1000 * 60));
     return `in ${diffInMinutes} ${diffInMinutes === 1 ? 'minute' : 'minutes'}`;
   } else if (diffInHours < 24) {
     return `in ${diffInHours} ${diffInHours === 1 ? 'hour' : 'hours'}`;
@@ -355,7 +371,11 @@ const Dashboard = () => {
                           </p>
                         </div>
                         <div className="ml-2 flex-shrink-0 flex">
-                          <p className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200">
+                          <p className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                            new Date(post.scheduledAt) < new Date()
+                              ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200'
+                              : 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200'
+                          }`}>
                             {formatTimeLeft(post.scheduledAt)}
                           </p>
                         </div>
@@ -408,7 +428,11 @@ const Dashboard = () => {
                         </p>
                       </div>
                       <div className="ml-2 flex-shrink-0 flex">
-                        <p className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200">
+                        <p className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                          new Date(post.scheduledAt) < new Date()
+                            ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200'
+                            : 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200'
+                        }`}>
                           {formatTimeLeft(post.scheduledAt)}
                         </p>
                       </div>

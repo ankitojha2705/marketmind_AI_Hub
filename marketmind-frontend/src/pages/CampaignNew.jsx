@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { createCampaign } from '../store/db';
+import { generateCampaign } from '../services/api';
 
 const allPlatforms = [
   { id: 'instagram', name: 'Instagram', icon: '📸' },
@@ -43,6 +44,12 @@ export default function CampaignNew() {
     endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     timezone: 'UTC+0:00'
   });
+  
+  // AI Generation states
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [aiResult, setAiResult] = useState(null);
+  const [aiError, setAiError] = useState(null);
 
   const togglePlatform = (platformId) => {
     setPlatforms(prev => 
@@ -54,6 +61,35 @@ export default function CampaignNew() {
 
   const nextStep = () => setStep(prev => prev + 1);
   const prevStep = () => setStep(prev => prev - 1);
+
+  const handleAIGenerate = async () => {
+    if (!aiPrompt.trim()) {
+      alert('Please enter a prompt describing your campaign');
+      return;
+    }
+
+    setIsGenerating(true);
+    setAiError(null);
+    setAiResult(null);
+
+    try {
+      const response = await generateCampaign(aiPrompt);
+      if (response.success) {
+        setAiResult(response.data);
+        // Auto-fill form fields from AI result if available
+        if (response.data.caption) {
+          setBrief(response.data.caption.substring(0, 200)); // Use first part of caption as brief
+        }
+      } else {
+        setAiError(response.error || 'Failed to generate campaign');
+      }
+    } catch (error) {
+      console.error('AI generation error:', error);
+      setAiError(error.message || 'Failed to generate campaign. Please try again.');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -122,6 +158,321 @@ export default function CampaignNew() {
             placeholder="Describe the purpose and key messages of your campaign..."
             required
           />
+        </div>
+
+        {/* AI Generation Section */}
+        <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
+          <div className="mb-4">
+            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+              🤖 AI-Powered Campaign Generation
+            </h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              Describe your business and campaign goals, and our AI will generate a complete Instagram-ready post with caption, hashtags, and strategy insights.
+            </p>
+            <div className="flex gap-2">
+              <textarea
+                value={aiPrompt}
+                onChange={(e) => setAiPrompt(e.target.value)}
+                placeholder="e.g., I have a coffee shop in LA, I want to share a post for instagram for christmas, telling my customers about our holiday special..."
+                className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                rows={3}
+                disabled={isGenerating}
+              />
+              <button
+                type="button"
+                onClick={handleAIGenerate}
+                disabled={isGenerating || !aiPrompt.trim()}
+                className="px-6 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+              >
+                {isGenerating ? 'Generating...' : '✨ Generate with AI'}
+              </button>
+            </div>
+          </div>
+
+          {/* AI Results Display */}
+          {isGenerating && (
+            <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+              <div className="flex items-center space-x-3">
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
+                <p className="text-sm text-blue-800 dark:text-blue-200">
+                  AI is analyzing your campaign and generating content... This may take 30-60 seconds.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {aiError && (
+            <div className="mt-4 p-4 bg-red-50 dark:bg-red-900/20 rounded-lg">
+              <p className="text-sm text-red-800 dark:text-red-200">
+                Error: {aiError}
+              </p>
+            </div>
+          )}
+
+          {aiResult && !isGenerating && (
+            <div className="mt-6 space-y-6">
+              {/* Header with Metrics */}
+              <div className="bg-gradient-to-r from-purple-600 to-blue-600 rounded-t-lg p-6 text-white">
+                <h4 className="text-2xl font-bold mb-3">
+                  🎯 AI-Generated Campaign Content
+                </h4>
+                <div className="flex flex-wrap gap-4 text-sm">
+                  {aiResult.seo_score && (
+                    <div className="flex items-center space-x-2 bg-white/20 px-3 py-1 rounded-full">
+                      <span className="font-semibold">SEO Score:</span>
+                      <span className="font-bold text-lg">{aiResult.seo_score}/100</span>
+                      <span>⭐</span>
+                    </div>
+                  )}
+                  {aiResult.hashtags && (
+                    <div className="flex items-center space-x-2 bg-white/20 px-3 py-1 rounded-full">
+                      <span className="font-semibold">Hashtags:</span>
+                      <span className="font-bold">{aiResult.hashtags.length} optimized</span>
+                    </div>
+                  )}
+                  {aiResult.post_type && (
+                    <div className="flex items-center space-x-2 bg-white/20 px-3 py-1 rounded-full">
+                      <span className="font-semibold">Type:</span>
+                      <span>{aiResult.post_type}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Main Content Grid */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Left Column - Main Content */}
+                <div className="lg:col-span-2 space-y-6">
+                  {/* Caption Card */}
+                  {aiResult.caption && (
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 border border-gray-200 dark:border-gray-700">
+                      <div className="flex items-center justify-between mb-3">
+                        <h5 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center">
+                          <span className="mr-2">✨</span> Caption
+                        </h5>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(aiResult.caption);
+                            alert('Caption copied to clipboard!');
+                          }}
+                          className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
+                        >
+                          Copy
+                        </button>
+                      </div>
+                      <p className="text-base text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">
+                        {aiResult.caption}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Hashtags Card */}
+                  {aiResult.hashtags && aiResult.hashtags.length > 0 && (
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 border border-gray-200 dark:border-gray-700">
+                      <div className="flex items-center justify-between mb-3">
+                        <h5 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center">
+                          <span className="mr-2">#️⃣</span> Hashtags
+                        </h5>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(aiResult.hashtags.join(' '));
+                            alert('Hashtags copied to clipboard!');
+                          }}
+                          className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
+                        >
+                          Copy All
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {aiResult.hashtags.map((tag, idx) => (
+                          <span 
+                            key={idx} 
+                            className="px-3 py-1.5 bg-gradient-to-r from-blue-100 to-purple-100 dark:from-blue-900/30 dark:to-purple-900/30 text-blue-800 dark:text-blue-200 rounded-full text-sm font-medium hover:scale-105 transition-transform cursor-pointer"
+                            onClick={() => {
+                              navigator.clipboard.writeText(tag);
+                            }}
+                            title="Click to copy"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Generated Image Card */}
+                  {aiResult.image_url && (
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 border border-gray-200 dark:border-gray-700">
+                      <h5 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+                        <span className="mr-2">🖼️</span> Generated Image
+                      </h5>
+                      <div className="relative group">
+                        <img 
+                          src={aiResult.image_url} 
+                          alt={aiResult.alt_text || "AI generated campaign image"}
+                          className="w-full rounded-lg border-2 border-gray-200 dark:border-gray-700 shadow-lg hover:shadow-xl transition-shadow"
+                        />
+                        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-opacity rounded-lg flex items-center justify-center">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              window.open(aiResult.image_url, '_blank');
+                            }}
+                            className="opacity-0 group-hover:opacity-100 px-4 py-2 bg-white rounded-lg shadow-lg text-sm font-medium transition-opacity"
+                          >
+                            Open Full Size
+                          </button>
+                        </div>
+                      </div>
+                      {aiResult.alt_text && (
+                        <p className="mt-3 text-xs text-gray-500 dark:text-gray-400 italic">
+                          Alt Text: {aiResult.alt_text}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Right Column - Details & Insights */}
+                <div className="space-y-6">
+                  {/* Post Details Card */}
+                  <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 border border-gray-200 dark:border-gray-700">
+                    <h5 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+                      <span className="mr-2">📋</span> Post Details
+                    </h5>
+                    <div className="space-y-3">
+                      {aiResult.post_type && (
+                        <div className="flex items-center justify-between py-2 border-b border-gray-200 dark:border-gray-700">
+                          <span className="text-sm text-gray-600 dark:text-gray-400">Type</span>
+                          <span className="text-sm font-medium text-gray-900 dark:text-white">{aiResult.post_type}</span>
+                        </div>
+                      )}
+                      {aiResult.suggested_post_time && (
+                        <div className="flex items-center justify-between py-2 border-b border-gray-200 dark:border-gray-700">
+                          <span className="text-sm text-gray-600 dark:text-gray-400">Optimal Time</span>
+                          <span className="text-sm font-medium text-gray-900 dark:text-white">{aiResult.suggested_post_time}</span>
+                        </div>
+                      )}
+                      {aiResult.call_to_action && (
+                        <div className="pt-2">
+                          <span className="text-sm text-gray-600 dark:text-gray-400 block mb-1">Call to Action</span>
+                          <p className="text-sm text-gray-900 dark:text-white">{aiResult.call_to_action}</p>
+                        </div>
+                      )}
+                      {aiResult.engagement_times && aiResult.engagement_times.length > 0 && (
+                        <div className="pt-2">
+                          <span className="text-sm text-gray-600 dark:text-gray-400 block mb-2">Best Posting Times</span>
+                          <div className="flex flex-wrap gap-1">
+                            {aiResult.engagement_times.map((time, idx) => (
+                              <span key={idx} className="px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 rounded text-xs">
+                                {time}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Strategic Insights Card */}
+                  {(aiResult.business_strength || aiResult.target_audience || aiResult.competitor_takeaway || aiResult.content_tone) && (
+                    <div className="bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 rounded-lg shadow-md p-6 border border-indigo-200 dark:border-indigo-800">
+                      <h5 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+                        <span className="mr-2">💡</span> Strategic Insights
+                      </h5>
+                      <div className="space-y-4">
+                        {aiResult.business_strength && (
+                          <div>
+                            <p className="text-xs font-semibold text-indigo-700 dark:text-indigo-300 uppercase tracking-wide mb-1">
+                              Business Strength
+                            </p>
+                            <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
+                              {aiResult.business_strength}
+                            </p>
+                          </div>
+                        )}
+                        {aiResult.target_audience && (
+                          <div>
+                            <p className="text-xs font-semibold text-indigo-700 dark:text-indigo-300 uppercase tracking-wide mb-1">
+                              Target Audience
+                            </p>
+                            <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
+                              {aiResult.target_audience}
+                            </p>
+                          </div>
+                        )}
+                        {aiResult.content_tone && (
+                          <div>
+                            <p className="text-xs font-semibold text-indigo-700 dark:text-indigo-300 uppercase tracking-wide mb-1">
+                              Content Tone
+                            </p>
+                            <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
+                              {aiResult.content_tone}
+                            </p>
+                          </div>
+                        )}
+                        {aiResult.competitor_takeaway && (
+                          <div>
+                            <p className="text-xs font-semibold text-indigo-700 dark:text-indigo-300 uppercase tracking-wide mb-1">
+                              Competitive Advantage
+                            </p>
+                            <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
+                              {aiResult.competitor_takeaway}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Keywords Card */}
+                  {aiResult.keywords && aiResult.keywords.length > 0 && (
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 border border-gray-200 dark:border-gray-700">
+                      <h5 className="text-lg font-semibold text-gray-900 dark:text-white mb-3 flex items-center">
+                        <span className="mr-2">🔑</span> Primary Keywords
+                      </h5>
+                      <div className="flex flex-wrap gap-2">
+                        {aiResult.keywords.map((keyword, idx) => (
+                          <span key={idx} className="px-2 py-1 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200 rounded text-xs">
+                            {keyword}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const textToCopy = `${aiResult.caption || ''}\n\n${(aiResult.hashtags || []).join(' ')}`;
+                    navigator.clipboard.writeText(textToCopy);
+                    alert('✅ Caption and hashtags copied to clipboard!');
+                  }}
+                  className="flex-1 px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-lg hover:from-green-700 hover:to-emerald-700 transition-all shadow-md hover:shadow-lg font-medium flex items-center justify-center"
+                >
+                  <span className="mr-2">📋</span>
+                  Copy Caption & Hashtags
+                </button>
+                {aiResult.image_url && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      window.open(aiResult.image_url, '_blank');
+                    }}
+                    className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all shadow-md hover:shadow-lg font-medium"
+                  >
+                    🖼️ View Image
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         <div>

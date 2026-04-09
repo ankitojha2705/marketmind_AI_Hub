@@ -86,6 +86,66 @@ export function listCampaigns() { return state.campaigns }
 export function listDrafts() { return state.drafts.filter(d => d.status === 'draft') }
 export function listScheduled() { return state.drafts.filter(d => d.status === 'scheduled') }
 
+/** Update campaign core fields and keep drafts in sync (add/remove platforms, refresh draft captions). */
+export function updateCampaign(campaignId, { name, brief, platforms }) {
+  const existing = state.campaigns.find((c) => c.id === campaignId);
+  if (!existing) {
+    throw new Error('Campaign not found');
+  }
+
+  const updatedCampaign = {
+    ...existing,
+    name,
+    brief,
+    platforms,
+  };
+
+  let drafts = [...state.drafts];
+
+  drafts = drafts.filter((d) => {
+    if (d.campaignId !== campaignId) return true;
+    if (d.status === 'scheduled') return true;
+    return platforms.includes(d.platform);
+  });
+
+  drafts = drafts.map((d) => {
+    if (d.campaignId !== campaignId || d.status !== 'draft') return d;
+    return {
+      ...d,
+      caption: `${name}: ${brief} — (${d.platform})`,
+    };
+  });
+
+  const platformsWithDraft = new Set(
+    drafts.filter((d) => d.campaignId === campaignId).map((d) => d.platform)
+  );
+
+  for (const p of platforms) {
+    if (!platformsWithDraft.has(p)) {
+      drafts.push({
+        id: uid(),
+        campaignId,
+        platform: p,
+        caption: `${name}: ${brief} — (${p})`,
+        hashtags: ['#sale', '#trending'],
+        status: 'draft',
+        scheduledAt: null,
+        createdAt: new Date().toISOString(),
+      });
+      platformsWithDraft.add(p);
+    }
+  }
+
+  state = {
+    ...state,
+    campaigns: state.campaigns.map((c) => (c.id === campaignId ? updatedCampaign : c)),
+    drafts,
+  };
+  save(state);
+  notify();
+  return updatedCampaign;
+}
+
 
 export function scheduleDraft(id, isoString) {
 const d = state.drafts.find(x => x.id === id)

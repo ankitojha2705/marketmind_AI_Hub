@@ -57,10 +57,6 @@ exports.login = async (req, res, next) => {
       return next(createError(401, 'Invalid credentials'));
     }
 
-    // Update last login
-    user.lastLogin = Date.now();
-    await user.save({ validateBeforeSave: false });
-
     // Generate token
     const token = signToken(user._id);
 

@@ -1,15 +1,20 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useMemo } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import {
   BarChart3,
+  Building2,
   Calendar,
+  MapPin,
   PieChart,
   Plus,
   Pencil,
   Trash2,
 } from 'lucide-react';
-import { getState, subscribe, scheduleDraft } from '../store/db';
+import { toast } from 'sonner';
+import { getState, subscribe, scheduleDraft, deleteCampaign } from '../store/db';
+import { fetchMyBrands } from '../services/api';
+import { getDashboardBrandId, setDashboardBrandId } from '../utils/dashboardBrandStorage';
 
 const shellCard =
   'rounded-2xl border border-gray-200 bg-[hsl(0,0%,99.5%)] shadow-sm';
@@ -163,6 +168,46 @@ const Dashboard = () => {
   const [schedulingDraftId, setSchedulingDraftId] = useState(null);
   const [scheduleDate, setScheduleDate] = useState('');
   const [isScheduling, setIsScheduling] = useState(false);
+  const [apiBrands, setApiBrands] = useState([]);
+  const [apiBrandsLoading, setApiBrandsLoading] = useState(true);
+  const [selectedBrandId, setSelectedBrandId] = useState(() => getDashboardBrandId());
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await fetchMyBrands();
+        if (!cancelled) setApiBrands(data.brands || []);
+      } catch (e) {
+        if (!cancelled) {
+          toast.error(e.response?.data?.error || e.message || 'Could not load brands');
+        }
+      } finally {
+        if (!cancelled) setApiBrandsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (apiBrandsLoading) return;
+    const stored = getDashboardBrandId();
+    if (stored && !apiBrands.some((b) => String(b.id) === stored)) {
+      setDashboardBrandId('');
+      setSelectedBrandId('');
+      return;
+    }
+    setSelectedBrandId(stored);
+  }, [apiBrands, apiBrandsLoading]);
+
+  const handleBrandCardClick = (brandId) => {
+    const sid = String(brandId);
+    const next = selectedBrandId === sid ? '' : sid;
+    setSelectedBrandId(next);
+    setDashboardBrandId(next);
+  };
 
   // Load data from database
   useEffect(() => {
@@ -184,10 +229,30 @@ const Dashboard = () => {
     return () => unsubscribe();
   }, []);
 
+  const filteredCampaigns = useMemo(() => {
+    if (!selectedBrandId) return [];
+    return campaigns.filter((c) => c.brandId === selectedBrandId);
+  }, [campaigns, selectedBrandId]);
+
+  const filteredCampaignIds = useMemo(
+    () => new Set(filteredCampaigns.map((c) => c.id)),
+    [filteredCampaigns]
+  );
+
+  const filteredDrafts = useMemo(
+    () => drafts.filter((d) => filteredCampaignIds.has(d.campaignId)),
+    [drafts, filteredCampaignIds]
+  );
+
+  const filteredScheduled = useMemo(
+    () => scheduled.filter((d) => filteredCampaignIds.has(d.campaignId)),
+    [scheduled, filteredCampaignIds]
+  );
+
   // Handle scheduling a post
   const handleSchedule = async (campaignId) => {
     if (!scheduleDate) {
-      alert('Please select a date and time');
+      toast.error('Please select a date and time');
       return;
     }
     
@@ -219,10 +284,10 @@ const Dashboard = () => {
       setSchedulingDraftId(null);
       setScheduleDate('');
       
-      alert('Post scheduled successfully!');
+      toast.success('Post scheduled successfully.');
     } catch (error) {
       console.error('Error scheduling post:', error);
-      alert(`Failed to schedule post: ${error.message}`);
+      toast.error(error.message || 'Failed to schedule post');
     } finally {
       setIsScheduling(false);
     }
@@ -241,7 +306,7 @@ const Dashboard = () => {
   // Handle deleting a campaign
   const handleDeleteCampaign = (campaignId) => {
     if (window.confirm('Are you sure you want to delete this campaign?')) {
-      setCampaigns(campaigns.filter(c => c.id !== campaignId));
+      deleteCampaign(campaignId);
     }
   };
 
@@ -269,7 +334,14 @@ const Dashboard = () => {
           </div>
 
           <div className="space-y-4">
-            {campaigns.map(campaign => {
+            {filteredCampaigns.length === 0 ? (
+              <p className="text-sm text-gray-600">
+                {!selectedBrandId
+                  ? 'Select a workspace brand above to view and manage campaigns for that brand.'
+                  : 'No campaigns for this brand yet. Create one to get started.'}
+              </p>
+            ) : null}
+            {filteredCampaigns.map((campaign) => {
               const platform = getPlatformInfo(campaign.platform);
               return (
                 <div key={campaign.id} className={innerCard}>
@@ -351,12 +423,16 @@ const Dashboard = () => {
         <div className="px-4 py-5 sm:p-6 sm:px-8">
           <h2 className="text-lg font-semibold tracking-tight text-gray-900 mb-4">Upcoming Posts</h2>
           <div className="space-y-4">
-            {scheduled.length === 0 ? (
-              <p className="text-sm text-gray-500">No upcoming posts scheduled.</p>
+            {filteredScheduled.length === 0 ? (
+              <p className="text-sm text-gray-500">
+                {!selectedBrandId
+                  ? 'Select a workspace brand to see upcoming posts for that brand.'
+                  : 'No upcoming posts scheduled.'}
+              </p>
             ) : (
-              scheduled.map(post => {
+              filteredScheduled.map(post => {
                 const platform = getPlatformInfo(post.platform);
-                const campaign = campaigns.find(c => c.id === post.campaignId);
+                const campaign = filteredCampaigns.find(c => c.id === post.campaignId);
                 
                 return (
                   <div key={post.id} className={innerCard}>
@@ -407,13 +483,17 @@ const Dashboard = () => {
     <div className={`${shellCard} overflow-hidden`}>
       <div className="px-4 py-5 sm:p-6 sm:px-8">
         <h2 className="text-lg font-semibold tracking-tight text-gray-900 mb-4">Scheduled Posts</h2>
-        {scheduled.length === 0 ? (
-          <p className="text-sm text-gray-600">No posts scheduled.</p>
+        {filteredScheduled.length === 0 ? (
+          <p className="text-sm text-gray-600">
+            {!selectedBrandId
+              ? 'Select a workspace brand to see scheduled posts for that brand.'
+              : 'No posts scheduled.'}
+          </p>
         ) : (
           <div className="space-y-4">
-            {scheduled.map(post => {
+            {filteredScheduled.map(post => {
               const platform = getPlatformInfo(post.platform);
-              const campaign = campaigns.find(c => c.id === post.campaignId);
+              const campaign = filteredCampaigns.find(c => c.id === post.campaignId);
               
               return (
                 <div key={post.id} className={innerCard}>
@@ -456,13 +536,13 @@ const Dashboard = () => {
 
   // Render the analytics tab
   const renderAnalyticsTab = () => {
-    const draftPostCount = drafts.filter((d) => d.status === 'draft').length;
-    const activeCampaignCount = campaigns.filter((c) => c.status === 'active').length;
+    const draftPostCount = filteredDrafts.filter((d) => d.status === 'draft').length;
+    const activeCampaignCount = filteredCampaigns.filter((c) => c.status === 'active').length;
 
     const overviewCards = [
-      { label: 'Campaigns', value: campaigns.length },
+      { label: 'Campaigns', value: filteredCampaigns.length },
       { label: 'Active campaigns', value: activeCampaignCount },
-      { label: 'Scheduled posts', value: scheduled.length },
+      { label: 'Scheduled posts', value: filteredScheduled.length },
       { label: 'Draft posts', value: draftPostCount },
     ];
 
@@ -473,7 +553,9 @@ const Dashboard = () => {
             Analytics
           </h2>
           <p className="mt-1 text-sm text-gray-500">
-            Snapshot of campaigns, drafts, and scheduled content.
+            {!selectedBrandId
+              ? 'Select a workspace brand to see metrics for that brand.'
+              : 'Snapshot of campaigns, drafts, and scheduled content for the selected brand.'}
           </p>
         </div>
 
@@ -527,6 +609,87 @@ const Dashboard = () => {
 
   return (
     <div className="w-full space-y-6">
+      <div className={`${shellCard} p-5 sm:p-6 sm:px-8`}>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0 flex-1 space-y-2">
+            <h2 className="text-lg font-semibold tracking-tight text-gray-900">Workspace brand</h2>
+            <p className="text-sm text-gray-600">
+              Select a brand to load its campaigns and posts on this dashboard. Click again to
+              deselect. To edit teams or details, use Manage brands.
+            </p>
+          </div>
+          <Link
+            to="/brands"
+            className="inline-flex shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-800 shadow-sm hover:bg-gray-50"
+          >
+            Manage brands
+          </Link>
+        </div>
+        {apiBrandsLoading ? (
+          <div className="mt-4 h-8 w-8 animate-spin rounded-full border-2 border-gray-200 border-t-blue-600" aria-hidden />
+        ) : apiBrands.length === 0 ? (
+          <p className="mt-4 text-sm text-gray-600">
+            No brands yet.{' '}
+            <Link to="/brands" className="font-semibold text-blue-600 hover:text-blue-800">
+              Create one
+            </Link>{' '}
+            on the Brands page.
+          </p>
+        ) : (
+          <ul
+            className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
+            role="list"
+            aria-label="Workspace brands"
+          >
+            {apiBrands.map((b) => {
+              const idStr = String(b.id);
+              const isSelected = selectedBrandId === idStr;
+              return (
+                <li key={b.id}>
+                  <button
+                    type="button"
+                    onClick={() => handleBrandCardClick(b.id)}
+                    aria-pressed={isSelected}
+                    className={[
+                      'flex w-full items-start gap-3 rounded-xl border p-4 text-left shadow-sm transition-colors',
+                      isSelected
+                        ? 'border-blue-500 bg-blue-50/90 ring-2 ring-blue-500/25'
+                        : 'border-gray-200 bg-white hover:border-blue-200 hover:bg-gray-50/80',
+                    ].join(' ')}
+                  >
+                    <div
+                      className={[
+                        'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
+                        isSelected ? 'bg-blue-100 text-blue-800' : 'bg-blue-50 text-blue-700',
+                      ].join(' ')}
+                    >
+                      <Building2 className="h-4 w-4" aria-hidden />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-gray-900 truncate">{b.name}</p>
+                      <p className="mt-0.5 flex items-center gap-1 text-xs text-gray-500">
+                        <MapPin className="h-3 w-3 shrink-0" aria-hidden />
+                        <span className="truncate">
+                          {b.city}, {b.country}
+                        </span>
+                      </p>
+                      <span
+                        className={[
+                          'mt-1.5 inline-flex rounded-full px-2 py-0.5 text-xs font-semibold',
+                          b.role === 'admin' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-700',
+                        ].join(' ')}
+                      >
+                        {b.role === 'admin' ? 'Admin' : 'Member'}
+                      </span>
+                    </div>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+
       <div className={`${shellCard} overflow-hidden`}>
         <nav className="flex gap-1 overflow-x-auto border-b border-gray-200 px-2 sm:px-4" aria-label="Dashboard sections">
           {[

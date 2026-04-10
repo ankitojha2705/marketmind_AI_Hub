@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { toast } from 'sonner';
 import { createCampaign, getState, updateCampaign } from '../store/db';
 import { generateCampaign } from '../services/api';
+import { getDashboardBrandId } from '../utils/dashboardBrandStorage';
 
 const shellCard =
   'rounded-2xl border border-gray-200 bg-[hsl(0,0%,99.5%)] shadow-sm';
@@ -61,7 +63,6 @@ export default function CampaignNew() {
   const [aiPrompt, setAiPrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [aiResult, setAiResult] = useState(null);
-  const [aiError, setAiError] = useState(null);
 
   useEffect(() => {
     if (!editCampaignId) return;
@@ -89,12 +90,11 @@ export default function CampaignNew() {
 
   const handleAIGenerate = async () => {
     if (!aiPrompt.trim()) {
-      alert('Please enter a prompt describing your campaign');
+      toast.error('Please enter a prompt describing your campaign');
       return;
     }
 
     setIsGenerating(true);
-    setAiError(null);
     setAiResult(null);
 
     try {
@@ -106,11 +106,11 @@ export default function CampaignNew() {
           setBrief(response.data.caption.substring(0, 200)); // Use first part of caption as brief
         }
       } else {
-        setAiError(response.error || 'Failed to generate campaign');
+        toast.error(response.error || 'Failed to generate campaign');
       }
     } catch (error) {
       console.error('AI generation error:', error);
-      setAiError(error.message || 'Failed to generate campaign. Please try again.');
+      toast.error(error.message || 'Failed to generate campaign. Please try again.');
     } finally {
       setIsGenerating(false);
     }
@@ -119,7 +119,7 @@ export default function CampaignNew() {
   const handleSubmit = async (e) => {
     e?.preventDefault?.();
     if (!name.trim() || !brief.trim() || platforms.length === 0) {
-      alert('Please fill in all required fields');
+      toast.error('Please fill in all required fields');
       return;
     }
 
@@ -134,15 +134,17 @@ export default function CampaignNew() {
         return;
       }
 
+      const workspaceBrand = getDashboardBrandId();
       createCampaign({
         name: name.trim(),
         brief: brief.trim(),
         platforms,
+        brandId: workspaceBrand || null,
       });
       navigate('/dashboard', { replace: true });
     } catch (error) {
       console.error('Error saving campaign:', error);
-      alert(`Failed to save campaign: ${error.message}`);
+      toast.error(error.message || 'Failed to save campaign');
     }
   };
 
@@ -231,14 +233,6 @@ export default function CampaignNew() {
             </div>
           )}
 
-          {aiError && (
-            <div className="mt-4 rounded-xl border border-red-200/80 bg-red-50 p-4 shadow-sm">
-              <p className="text-sm font-medium text-red-900">
-                Error: {aiError}
-              </p>
-            </div>
-          )}
-
           {aiResult && !isGenerating && (
             <div className="mt-6 overflow-hidden rounded-2xl border border-gray-200 bg-[hsl(0,0%,99.5%)] shadow-sm">
               {/* Header with Metrics */}
@@ -283,7 +277,7 @@ export default function CampaignNew() {
                           type="button"
                           onClick={() => {
                             navigator.clipboard.writeText(aiResult.caption);
-                            alert('Caption copied to clipboard!');
+                            toast.success('Caption copied to clipboard');
                           }}
                           className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
                         >
@@ -307,7 +301,7 @@ export default function CampaignNew() {
                           type="button"
                           onClick={() => {
                             navigator.clipboard.writeText(aiResult.hashtags.join(' '));
-                            alert('Hashtags copied to clipboard!');
+                            toast.success('Hashtags copied to clipboard');
                           }}
                           className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
                         >
@@ -481,7 +475,7 @@ export default function CampaignNew() {
                   onClick={() => {
                     const textToCopy = `${aiResult.caption || ''}\n\n${(aiResult.hashtags || []).join(' ')}`;
                     navigator.clipboard.writeText(textToCopy);
-                    alert('Caption and hashtags copied to clipboard.');
+                    toast.success('Caption and hashtags copied to clipboard');
                   }}
                   className="flex flex-1 items-center justify-center rounded-lg bg-emerald-600 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700"
                 >

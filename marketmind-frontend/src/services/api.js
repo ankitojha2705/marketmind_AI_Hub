@@ -1,6 +1,16 @@
 import axios from 'axios';
 
-const API_URL = 'http://localhost:5001/api'; // Update with your backend URL
+/**
+ * VITE_API_URL may be the server origin (http://localhost:5001) or the API prefix
+ * (http://localhost:5001/api). Axios paths are relative to /api (e.g. /brands → /api/brands).
+ */
+function resolveAuthApiBase() {
+  const raw = (import.meta.env.VITE_API_URL || 'http://localhost:5001').replace(/\/$/, '');
+  return raw.endsWith('/api') ? raw : `${raw}/api`;
+}
+
+export const API_URL = resolveAuthApiBase();
+const CONTENT_API_URL = import.meta.env.VITE_CONTENT_API_URL || 'http://localhost:8002';
 
 const api = axios.create({
   baseURL: API_URL,
@@ -9,14 +19,23 @@ const api = axios.create({
   },
 });
 
-// Add a request interceptor to add the auth token to requests
-api.interceptors.request.use((config) => {
+const contentApi = axios.create({
+  baseURL: CONTENT_API_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+const attachAuth = (config) => {
   const token = localStorage.getItem('token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
-});
+};
+
+api.interceptors.request.use(attachAuth);
+contentApi.interceptors.request.use(attachAuth);
 
 export const register = async (userData) => {
   try {
@@ -47,7 +66,6 @@ export const login = async (email, password) => {
 export const getCurrentUser = async () => {
   try {
     const response = await api.get('/auth/me');
-    // Backend returns { success: true, user: {...} }
     return response.data.user || response.data;
   } catch (error) {
     console.error('Error fetching current user:', error);
@@ -95,27 +113,37 @@ export const removeBrandMember = async (brandId, userId) => {
   return data;
 };
 
-// AI Campaign Generation API
-const AI_API_URL = import.meta.env.VITE_AI_API_URL || 'http://localhost:8001';
+/** @param {string} brandId @param {{ includeArchived?: boolean }} [opts] */
+export const fetchBrandCampaigns = async (brandId, opts = {}) => {
+  const { includeArchived = false } = opts;
+  const { data } = await contentApi.get(`/api/brands/${brandId}/campaigns`, {
+    params: { include_archived: includeArchived },
+  });
+  return data;
+};
 
-export const generateCampaign = async (prompt) => {
-  try {
-    const response = await fetch(`${AI_API_URL}/api/generate-campaign`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ prompt }),
-    });
-    
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to generate campaign');
-    }
-    
-    return await response.json();
-  } catch (error) {
-    console.error('Campaign generation error:', error);
-    throw error;
-  }
+/**
+ * @param {string} brandId
+ * @param {object} payload — Content API CampaignCreate (camelCase)
+ */
+export const createContentCampaign = async (brandId, payload) => {
+  const { data } = await contentApi.post(`/api/brands/${brandId}/campaigns`, payload);
+  return data;
+};
+
+/** @param {string} brandId @param {string} campaignId */
+export const fetchContentCampaign = async (brandId, campaignId) => {
+  const { data } = await contentApi.get(`/api/brands/${brandId}/campaigns/${campaignId}`);
+  return data;
+};
+
+/** @param {string} brandId @param {string} campaignId @param {object} payload */
+export const updateContentCampaign = async (brandId, campaignId, payload) => {
+  const { data } = await contentApi.patch(`/api/brands/${brandId}/campaigns/${campaignId}`, payload);
+  return data;
+};
+
+/** @param {string} brandId @param {string} campaignId */
+export const deleteContentCampaign = async (brandId, campaignId) => {
+  await contentApi.delete(`/api/brands/${brandId}/campaigns/${campaignId}`);
 };

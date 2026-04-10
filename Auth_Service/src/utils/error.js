@@ -2,6 +2,8 @@ class ErrorResponse extends Error {
   constructor(message, statusCode) {
     super(message);
     this.statusCode = statusCode;
+    /** Expected / handled errors (vs programming or system failures) */
+    this.isOperational = true;
   }
 }
 
@@ -12,9 +14,6 @@ const createError = (statusCode, message) => {
 const errorHandler = (err, req, res, next) => {
   let error = { ...err };
   error.message = err.message;
-
-  // Log to console for dev
-  console.error(err.stack || err.message);
 
   // Mongoose bad ObjectId
   if (err.name === 'CastError') {
@@ -30,18 +29,30 @@ const errorHandler = (err, req, res, next) => {
 
   // Mongoose validation error
   if (err.name === 'ValidationError') {
-    const message = Object.values(err.errors).map(val => val.message);
+    const message = Object.values(err.errors).map((val) => val.message);
     error = new ErrorResponse(message, 400);
   }
 
-  res.status(error.statusCode || 500).json({
+  const statusCode = error.statusCode || 500;
+  const logLine = `${req.method} ${req.originalUrl}`;
+  const msgForLog = Array.isArray(error.message)
+    ? error.message.join('; ')
+    : error.message;
+
+  if (statusCode < 500) {
+    console.warn(`[${statusCode}] ${logLine} — ${msgForLog}`);
+  } else {
+    console.error(`[${statusCode}] ${logLine}`, err.stack || msgForLog);
+  }
+
+  res.status(statusCode).json({
     success: false,
-    error: error.message || 'Server Error'
+    error: error.message || 'Server Error',
   });
 };
 
 module.exports = {
   ErrorResponse,
   createError,
-  errorHandler
+  errorHandler,
 };

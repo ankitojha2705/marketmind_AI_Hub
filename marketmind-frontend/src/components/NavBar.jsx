@@ -8,7 +8,7 @@ import {
   LayoutDashboard,
   LogOut,
   Settings,
-  Sparkles,
+  Megaphone,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { CONTENT_SHELL_CLASS } from '../constants/layout';
@@ -24,7 +24,7 @@ function userDisplayName(user) {
 const mainNavItems = [
   { to: '/dashboard', label: 'Dashboard', Icon: LayoutDashboard },
   { to: '/brands', label: 'Brands', Icon: Building2 },
-  { to: '/campaigns/new', label: 'New Campaign', Icon: Sparkles },
+  { to: '/campaigns', label: 'Campaigns', Icon: Megaphone },
   { to: '/calendar', label: 'Calendar', Icon: Calendar },
   { to: '/library', label: 'Library', Icon: BookOpen },
 ];
@@ -75,7 +75,8 @@ export default function NavBar() {
                 {mainNavItems.map(({ to, label, Icon }) => {
                   const active =
                     location.pathname === to ||
-                    (to === '/brands' && location.pathname.startsWith('/brands'));
+                    (to === '/brands' && location.pathname.startsWith('/brands')) ||
+                    (to === '/campaigns' && location.pathname.startsWith('/campaigns'));
                   return (
                   <Link
                     key={to}
@@ -178,7 +179,8 @@ export default function NavBar() {
               {mainNavItems.map(({ to, label, Icon }) => {
                 const active =
                   location.pathname === to ||
-                  (to === '/brands' && location.pathname.startsWith('/brands'));
+                  (to === '/brands' && location.pathname.startsWith('/brands')) ||
+                  (to === '/campaigns' && location.pathname.startsWith('/campaigns'));
                 return (
                 <Link
                   key={to}

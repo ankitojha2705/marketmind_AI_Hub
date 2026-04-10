@@ -198,11 +198,6 @@ export default function BrandManagePage() {
           <BrandAvatar name={brand.name} logoUrl={brand.logo_url} size="lg" />
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium text-gray-900">Logo</p>
-            <p className="mt-1 text-xs text-gray-500 leading-relaxed">
-              Shown on brand cards and the dashboard. Files are stored on the server by brand id;{' '}
-              <span className="font-medium text-gray-700">logo_url</span> can later point to S3 or a CDN without
-              changing the app shape.
-            </p>
             {isAdmin ? (
               <div className="mt-3">
                 <input

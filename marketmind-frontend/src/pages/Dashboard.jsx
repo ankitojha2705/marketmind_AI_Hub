@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import {
   BarChart3,
@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getState, subscribe, scheduleDraft } from '../store/db';
-import { fetchMyBrands, fetchBrandCampaigns } from '../services/api';
+import { fetchMyBrands, fetchBrandCampaigns, fetchBrandPosts } from '../services/api';
 import BrandAvatar from '../components/BrandAvatar';
 import { useAuth } from '../context/AuthContext';
 import { getDashboardBrandId, setDashboardBrandId } from '../utils/dashboardBrandStorage';
@@ -127,6 +127,7 @@ const formatTimeLeft = (dateString) => {
 
 // Main Dashboard Component
 const Dashboard = () => {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const userEmail = user?.email || '';
 
@@ -209,13 +210,46 @@ const Dashboard = () => {
     };
   }, [selectedBrandId]);
 
-  // Local drafts / scheduled posts (IndexedDB); campaigns list comes from content API
+  useEffect(() => {
+    if (!selectedBrandId) {
+      setScheduled([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await fetchBrandPosts(selectedBrandId);
+        if (!cancelled) {
+          setScheduled(Array.isArray(list) ? list : []);
+          console.log('[Dashboard][Scheduled] Loaded brand posts', {
+            brandId: selectedBrandId,
+            total: Array.isArray(list) ? list.length : 0,
+          });
+        }
+      } catch (e) {
+        if (!cancelled) {
+          console.error('[Dashboard][Scheduled] Failed to fetch brand posts', {
+            brandId: selectedBrandId,
+            error: e?.response?.data || e?.message || e,
+          });
+          toast.error(e.response?.data?.detail || e.response?.data?.error || e.message || 'Could not load posts');
+          setScheduled([]);
+        }
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedBrandId]);
+
+  // Local drafts (IndexedDB). Scheduled posts are sourced from content API.
   useEffect(() => {
     const loadData = () => {
       try {
         const state = getState();
         setDrafts(state.drafts || []);
-        setScheduled(state.drafts?.filter((d) => d.status === 'scheduled') || []);
       } catch (error) {
         console.error('Error loading data:', error);
       } finally {
@@ -260,6 +294,36 @@ const Dashboard = () => {
     [scheduled, filteredCampaignIds]
   );
 
+  useEffect(() => {
+    if (filteredScheduled.length === 0) return;
+    console.log('[Dashboard][Scheduled] Debug snapshot', {
+      selectedBrandId,
+      totalScheduled: scheduled.length,
+      filteredScheduled: filteredScheduled.length,
+      filteredCampaigns: filteredCampaigns.length,
+      knownBrands: apiBrands.length,
+    });
+
+    filteredScheduled.forEach((post) => {
+      const campaign = filteredCampaigns.find((c) => String(c.id) === String(post.campaignId));
+      const brandIdFromCampaign = campaign?.brandId;
+      const fallbackBrandId = post?.brandId;
+      const resolvedBrandId = brandIdFromCampaign || fallbackBrandId;
+      const brand = apiBrands.find((b) => String(b.id) === String(resolvedBrandId));
+      console.log('[Dashboard][Scheduled] Resolve post', {
+        postId: post.id,
+        campaignId: post.campaignId,
+        campaignFound: Boolean(campaign),
+        brandIdFromCampaign,
+        fallbackBrandId,
+        resolvedBrandId,
+        brandFound: Boolean(brand),
+        brandName: brand?.name || null,
+        brandLogoUrl: brand?.logo_url || null,
+      });
+    });
+  }, [apiBrands, filteredCampaigns, filteredScheduled, scheduled.length, selectedBrandId]);
+
   // Handle scheduling a post
   const handleSchedule = async (campaignId) => {
     if (!scheduleDate) {
@@ -291,7 +355,6 @@ const Dashboard = () => {
       // Update local state with fresh data from the store
       const updatedState = getState();
       setDrafts(updatedState.drafts.filter(d => d.status === 'draft'));
-      setScheduled(updatedState.drafts.filter(d => d.status === 'scheduled'));
       
       // Reset form
       setSchedulingDraftId(null);
@@ -311,6 +374,17 @@ const Dashboard = () => {
     console.log('Starting scheduling for draft:', draftId);
     setSchedulingDraftId(draftId);
     setScheduleDate('');
+  };
+
+  const openCampaignFromCard = (campaign) => {
+    const status = String(campaign?.status || '').toLowerCase();
+    if (status === 'cancelled') {
+      toast.error('Cancelled campaigns cannot be opened');
+      return;
+    }
+    const bid = String(campaign.brandId || selectedBrandId || '');
+    if (bid) setDashboardBrandId(bid);
+    navigate(`/campaigns/${campaign.id}/edit`);
   };
 
   const hasBrands = apiBrands.length > 0;
@@ -398,10 +472,22 @@ const Dashboard = () => {
               );
               const brandMeta = brandMetaForCampaign(campaign);
               return (
-                <div key={campaign.id} className={campaignCardPreviewClass}>
+                <div
+                  key={campaign.id}
+                  className={`${campaignCardPreviewClass} cursor-pointer transition-all hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md`}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => openCampaignFromCard(campaign)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      openCampaignFromCard(campaign);
+                    }
+                  }}
+                >
                   <div className="flex items-start gap-3">
-                    <div className={campaignCardIconWrapClass} aria-hidden>
-                      <Megaphone className="h-5 w-5" />
+                    <div className={campaignCardIconWrapClass}>
+                      <BrandAvatar name={brandMeta.name} logoUrl={brandMeta.logoUrl} size="sm" />
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
@@ -409,14 +495,6 @@ const Dashboard = () => {
                           <h3 className="text-base font-semibold leading-snug text-gray-900 sm:text-lg">
                             {campaign.name}
                           </h3>
-                          <div className="mt-1 flex items-center gap-2">
-                            <BrandAvatar
-                              name={brandMeta.name}
-                              logoUrl={brandMeta.logoUrl}
-                              size="sm"
-                            />
-                            <span className="text-sm text-gray-600">{brandMeta.name}</span>
-                          </div>
                         </div>
                         <div className="flex shrink-0 items-center gap-1.5">
                           <span
@@ -428,7 +506,10 @@ const Dashboard = () => {
                           </span>
                           {hasDraftForCampaign ? (
                             <button
-                              onClick={() => startScheduling(campaign.id)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                startScheduling(campaign.id);
+                              }}
                               className="rounded-lg p-2 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
                               title="Schedule draft post"
                               type="button"
@@ -439,8 +520,7 @@ const Dashboard = () => {
                         </div>
                       </div>
                       <div className="mt-3">
-                        <p className={campaignPlatformLabelClass}>Platform</p>
-                        <div className="mt-1.5">
+                        <div>
                           <PlatformIconRow
                             platforms={platformIds}
                             badge
@@ -455,29 +535,6 @@ const Dashboard = () => {
               );
             })}
           </div>
-        </div>
-      </div>
-
-      <div className={`${shellCard} overflow-hidden`}>
-        <div className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-4">
-          <p className="text-sm text-gray-600">
-            {!selectedBrandId
-              ? 'Select a workspace brand to see how many posts are scheduled for that brand.'
-              : showNoCampaignsFocus
-                ? 'Scheduled posts appear after you create a campaign and save drafts. Start with New campaign in the section above.'
-                : filteredScheduled.length === 0
-                  ? 'No scheduled posts for this brand yet. Schedule a draft from a campaign card above.'
-                  : `${filteredScheduled.length} scheduled ${filteredScheduled.length === 1 ? 'post' : 'posts'} for this brand — open the Scheduled tab for the full list.`}
-          </p>
-          <button
-            type="button"
-            onClick={() => setActiveTab('scheduled')}
-            disabled={!selectedBrandId}
-            className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <Calendar className="h-4 w-4 shrink-0 text-blue-600" aria-hidden />
-            View scheduled posts
-          </button>
         </div>
       </div>
     </div>
@@ -508,12 +565,19 @@ const Dashboard = () => {
           <div className="space-y-4">
             {filteredScheduled.map(post => {
               const campaign = filteredCampaigns.find(c => c.id === post.campaignId);
+              const brandMeta = campaign
+                ? brandMetaForCampaign(campaign)
+                : (() => {
+                    const b = apiBrands.find((x) => String(x.id) === String(post.brandId));
+                    return { name: b?.name ?? 'Brand', logoUrl: b?.logo_url };
+                  })();
               
               return (
                 <div key={post.id} className={innerCard}>
                   <div className="flex items-center justify-between gap-2">
-                      <div className="flex min-w-0 items-center">
-                        <span className="mr-3 shrink-0">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <BrandAvatar name={brandMeta.name} logoUrl={brandMeta.logoUrl} size="sm" />
+                        <span className="shrink-0">
                           <PlatformIconRow
                             platforms={post.platform}
                             badge

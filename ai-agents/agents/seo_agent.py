@@ -32,6 +32,16 @@ class SEOOutput(BaseModel):
     location_tags: Optional[List[str]] = Field(default_factory=list, description="Location-based tags for local SEO")
 
 
+class PostSEOResult(BaseModel):
+    schedule_seq: int = Field(description="Schedule sequence id for the post")
+    platform: str = Field(description="Platform for the post")
+    optimized: SEOOutput
+
+
+class MultiPostSEOOutput(BaseModel):
+    posts: List[PostSEOResult] = Field(default_factory=list)
+
+
 class SEOAgentConfig:
     """Configuration and creation of the SEO Agent"""
     
@@ -230,7 +240,7 @@ def parse_seo_output(raw_output: str) -> SEOOutput:
         raise
 
 
-def run_seo_agent(
+def _run_single_seo_agent(
     business_type: str,
     location: Optional[str],
     content_data: Dict,
@@ -282,12 +292,63 @@ def run_seo_agent(
     return parse_seo_output(str(result))
 
 
+def run_seo_agent(
+    business_type: str,
+    location: Optional[str],
+    content_data: Dict,
+    campaign_goals: str,
+    api_key: Optional[str] = None,
+) -> MultiPostSEOOutput:
+    posts = content_data.get("posts") if isinstance(content_data, dict) else None
+    if not isinstance(posts, list):
+        single = _run_single_seo_agent(
+            business_type=business_type,
+            location=location,
+            content_data=content_data,
+            campaign_goals=campaign_goals,
+            api_key=api_key,
+        )
+        return MultiPostSEOOutput(
+            posts=[
+                PostSEOResult(
+                    schedule_seq=1,
+                    platform="instagram",
+                    optimized=single,
+                )
+            ]
+        )
+
+    out: list[PostSEOResult] = []
+    for idx, post in enumerate(posts):
+        optimized = _run_single_seo_agent(
+            business_type=business_type,
+            location=location,
+            content_data=post if isinstance(post, dict) else {},
+            campaign_goals=campaign_goals,
+            api_key=api_key,
+        )
+        out.append(
+            PostSEOResult(
+                schedule_seq=int(post.get("schedule_seq", idx + 1)) if isinstance(post, dict) else idx + 1,
+                platform=(post.get("platform", "instagram") if isinstance(post, dict) else "instagram"),
+                optimized=optimized,
+            )
+        )
+    return MultiPostSEOOutput(posts=out)
+
+
 if __name__ == "__main__":
     # Test the agent
     test_content = {
-        "caption": "Check out our new donuts! 🍩",
-        "hashtags": ["#donuts", "#food", "#yum"],
-        "post_type": "Photo"
+        "posts": [
+            {
+                "schedule_seq": 1,
+                "platform": "instagram",
+                "caption": "Check out our new donuts! 🍩",
+                "hashtags": ["#donuts", "#food", "#yum"],
+                "post_type": "Photo",
+            }
+        ]
     }
     
     result = run_seo_agent(
@@ -299,14 +360,3 @@ if __name__ == "__main__":
     
     print("\n=== SEO Agent Output ===")
     print(json.dumps(result.dict(), indent=2))
-    
-    print("\n=== Business Insights ===")
-    print(f"Business Strength: {result.business_strength}")
-    print(f"Content Tone: {result.content_tone}")
-    print(f"Target Audience: {result.target_audience}")
-    print(f"Competitor Takeaway: {result.competitor_takeaway}")
-    
-    print("\n=== SEO Optimization ===")
-    print(f"Caption: {result.optimized_caption}")
-    print(f"Hashtags: {' '.join(result.optimized_hashtags)}")
-    print(f"SEO Score: {result.seo_score}/100")

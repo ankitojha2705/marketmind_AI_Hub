@@ -11,6 +11,7 @@ function resolveAuthApiBase() {
 
 export const API_URL = resolveAuthApiBase();
 const CONTENT_API_URL = import.meta.env.VITE_CONTENT_API_URL || 'http://localhost:8002';
+const AGENTS_API_URL = import.meta.env.VITE_AGENTS_API_URL || 'http://localhost:8001';
 
 /** Server origin without `/api` — for static files like `/uploads/...` (and future CDN/S3 you may swap the base). */
 export function authPublicOrigin() {
@@ -44,6 +45,13 @@ const contentApi = axios.create({
   },
 });
 
+const agentsApi = axios.create({
+  baseURL: AGENTS_API_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
 const attachAuth = (config) => {
   const token = localStorage.getItem('token');
   if (token) {
@@ -57,6 +65,7 @@ const attachAuth = (config) => {
 
 api.interceptors.request.use(attachAuth);
 contentApi.interceptors.request.use(attachAuth);
+agentsApi.interceptors.request.use(attachAuth);
 
 export const register = async (userData) => {
   try {
@@ -175,4 +184,40 @@ export const updateContentCampaign = async (brandId, campaignId, payload) => {
 /** @param {string} brandId @param {string} campaignId */
 export const deleteContentCampaign = async (brandId, campaignId) => {
   await contentApi.delete(`/api/brands/${brandId}/campaigns/${campaignId}`);
+};
+
+/** @param {string} brandId @param {string} campaignId */
+export const fetchCampaignPosts = async (brandId, campaignId) => {
+  const { data } = await contentApi.get(`/api/brands/${brandId}/campaigns/${campaignId}/posts`);
+  return data;
+};
+
+/** @param {string} brandId */
+export const fetchBrandPosts = async (brandId) => {
+  const { data } = await contentApi.get(`/api/brands/${brandId}/posts`);
+  return data;
+};
+
+/** @param {string} brandId @param {string} campaignId @param {object} payload */
+export const createCampaignPost = async (brandId, campaignId, payload) => {
+  const { data } = await contentApi.post(`/api/brands/${brandId}/campaigns/${campaignId}/posts`, payload);
+  return data;
+};
+
+/** @param {string} brandId @param {string} campaignId @param {string} postId @param {object} payload */
+export const updateCampaignPost = async (brandId, campaignId, postId, payload) => {
+  const { data } = await contentApi.patch(`/api/brands/${brandId}/campaigns/${campaignId}/posts/${postId}`, payload);
+  return data;
+};
+
+/** @param {object} payload */
+export const runCampaignAnalysis = async (payload) => {
+  const { data } = await agentsApi.post('/api/step2/analyze', payload);
+  return data;
+};
+
+/** @param {object} payload */
+export const runCampaignGeneration = async (payload) => {
+  const { data } = await agentsApi.post('/api/step3/generate', payload);
+  return data;
 };

@@ -1,49 +1,41 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import {
   FaFacebook,
   FaInstagram,
   FaLinkedinIn,
   FaReddit,
+  FaTrash,
   FaXTwitter,
 } from 'react-icons/fa6';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
+  createCampaignPost,
   createContentCampaign,
+  fetchCampaignPosts,
   fetchContentCampaign,
   fetchMyBrands,
+  runCampaignAnalysis,
+  runCampaignGeneration,
+  updateCampaignPost,
   updateContentCampaign,
 } from '../services/api';
-import { PlatformIconRow } from '../components/PlatformIcon';
 import BrandAvatar from '../components/BrandAvatar';
 import { getDashboardBrandId, setDashboardBrandId } from '../utils/dashboardBrandStorage';
 
-const shellCard =
-  'rounded-2xl border border-gray-200 bg-[hsl(0,0%,99.5%)] shadow-sm';
+const shellCard = 'rounded-2xl border border-gray-200 bg-[hsl(0,0%,99.5%)] shadow-sm';
 const inputClass =
   'w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/25';
-
+const labelClass = 'mb-1 block text-base font-semibold text-gray-900';
+const POST_COUNT_MIN = 1;
+const POST_COUNT_MAX = 5;
 const allPlatforms = [
   { id: 'instagram', name: 'Instagram', Icon: FaInstagram, implemented: true },
   { id: 'twitter', name: 'X (Twitter)', Icon: FaXTwitter, implemented: false },
   { id: 'reddit', name: 'Reddit', Icon: FaReddit, implemented: false },
   { id: 'facebook', name: 'Facebook', Icon: FaFacebook, implemented: false },
   { id: 'linkedin', name: 'LinkedIn', Icon: FaLinkedinIn, implemented: false },
-];
-
-/** Platforms we persist today (only Instagram has generation wired). */
-const IMPLEMENTED_PLATFORM_IDS = new Set(
-  allPlatforms.filter((p) => p.implemented).map((p) => p.id)
-);
-
-const campaignTypes = [
-  { id: 'awareness', name: 'Brand Awareness', description: 'Increase visibility and recognition of your brand' },
-  { id: 'engagement', name: 'Engagement', description: 'Boost interactions and engagement with your audience' },
-  { id: 'traffic', name: 'Website Traffic', description: 'Drive more visitors to your website' },
-  { id: 'leads', name: 'Lead Generation', description: 'Capture potential customer information' },
-  { id: 'sales', name: 'Sales', description: 'Drive product or service sales' },
-  { id: 'app-installs', name: 'App Installs', description: 'Increase downloads of your mobile app' },
 ];
 
 function dateInputToIso(dateStr) {
@@ -60,43 +52,121 @@ function isoToDateInput(iso) {
   }
 }
 
-const AGE_FLOOR = 13;
-const AGE_CEIL = 100;
-const POST_COUNT_MIN = 1;
-const POST_COUNT_MAX = 5;
+function isoToDateTimeLocal(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(
+    d.getMinutes()
+  )}`;
+}
+
+function localToIso(local) {
+  if (!local) return '';
+  const d = new Date(local);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toISOString();
+}
+
+function toSnakeAnalysis(analysis) {
+  return {
+    objective: analysis.objective || '',
+    target_audience: analysis.targetAudience || '',
+    content_tone: analysis.contentTone || '',
+    platform_insights: analysis.platformInsights || {},
+    schedule_plan: (analysis.schedulePlan || []).map((item, idx) => ({
+      seq: Number(item.seq) || idx + 1,
+      scheduled_at: item.scheduledAt,
+      focus: item.focus || '',
+      platforms: item.platforms?.length ? item.platforms : ['instagram'],
+    })),
+  };
+}
+
+function fromSnakeAnalysis(analysis) {
+  return {
+    objective: analysis.objective || '',
+    targetAudience: analysis.target_audience || '',
+    contentTone: analysis.content_tone || '',
+    platformInsights: analysis.platform_insights || {},
+    schedulePlan: (analysis.schedule_plan || []).map((item, idx) => ({
+      seq: Number(item.seq) || idx + 1,
+      scheduledAt: item.scheduled_at || '',
+      focus: item.focus || '',
+      platforms: item.platforms?.length ? item.platforms : ['instagram'],
+    })),
+  };
+}
+
+const platformIconMap = {
+  instagram: FaInstagram,
+  twitter: FaXTwitter,
+  reddit: FaReddit,
+  facebook: FaFacebook,
+  linkedin: FaLinkedinIn,
+};
+
+function formatInsightKey(key) {
+  return String(key || '')
+    .replace(/_/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (ch) => ch.toUpperCase());
+}
 
 export default function CampaignNew() {
   const navigate = useNavigate();
-  const { campaignId: editCampaignId } = useParams();
-  const isEdit = Boolean(editCampaignId);
+  const { campaignId: routeCampaignId } = useParams();
+  const isEdit = Boolean(routeCampaignId);
 
   const [step, setStep] = useState(1);
-  const [loadError, setLoadError] = useState('');
-  const [loadingCampaign, setLoadingCampaign] = useState(isEdit);
-  const [saving, setSaving] = useState(false);
-  const [campaignStatus, setCampaignStatus] = useState(null);
-  const [archiving, setArchiving] = useState(false);
-
-  const [name, setName] = useState('');
-  const [brief, setBrief] = useState('');
-  const [objective, setObjective] = useState('');
-  const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [endDate, setEndDate] = useState(() =>
-    new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-  );
-
-  const [ageMin, setAgeMin] = useState(18);
-  const [ageMax, setAgeMax] = useState(65);
-  const [postCount, setPostCount] = useState(1);
-
-  const [platforms, setPlatforms] = useState(['instagram']);
-
+  const [readOnlyTab, setReadOnlyTab] = useState('posts');
   const [brands, setBrands] = useState([]);
   const [brandsLoading, setBrandsLoading] = useState(true);
   const [brandsError, setBrandsError] = useState('');
   const [selectedBrandId, setSelectedBrandId] = useState('');
-  /** After a successful edit fetch, brand cannot be changed (campaign is scoped to one brand). */
-  const [editBrandLocked, setEditBrandLocked] = useState(false);
+  const [campaignId, setCampaignId] = useState(routeCampaignId || '');
+  const [loadingCampaign, setLoadingCampaign] = useState(isEdit);
+  const [campaignStatus, setCampaignStatus] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [processingMessage, setProcessingMessage] = useState('');
+
+  const [name, setName] = useState('');
+  const [brief, setBrief] = useState('');
+  const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [endDate, setEndDate] = useState(() =>
+    new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  );
+  const [postCount, setPostCount] = useState(1);
+  const [platforms, setPlatforms] = useState([]);
+
+  const [analysis, setAnalysis] = useState({
+    objective: '',
+    targetAudience: '',
+    contentTone: '',
+    platformInsights: {},
+    schedulePlan: [],
+  });
+  const [posts, setPosts] = useState([]);
+  const [editingStep2, setEditingStep2] = useState(false);
+  const stepMeta = [
+    { n: 1, title: 'Campaign setup' },
+    { n: 2, title: 'Analysis review' },
+    { n: 3, title: 'Posts review' },
+  ];
+
+  const togglePlatform = (platformId) => {
+    const option = allPlatforms.find((p) => p.id === platformId);
+    if (!option?.implemented) return;
+    setPlatforms((prev) => {
+      if (prev.includes(platformId)) {
+        return prev.filter((x) => x !== platformId);
+      }
+      return [...prev, platformId];
+    });
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -105,22 +175,17 @@ export default function CampaignNew() {
       setBrandsError('');
       try {
         const data = await fetchMyBrands();
-        if (!cancelled) {
-          const list = data.brands || [];
-          setBrands(list);
-          setSelectedBrandId((prev) => {
-            if (prev && list.some((b) => String(b.id) === String(prev))) return prev;
-            const dash = getDashboardBrandId();
-            if (dash && list.some((b) => String(b.id) === dash)) return dash;
-            if (isEdit) return '';
-            return list[0] ? String(list[0].id) : '';
-          });
-        }
+        if (cancelled) return;
+        const list = data.brands || [];
+        setBrands(list);
+        setSelectedBrandId((prev) => {
+          if (prev && list.some((b) => String(b.id) === String(prev))) return prev;
+          const dash = getDashboardBrandId();
+          if (dash && list.some((b) => String(b.id) === dash)) return dash;
+          return list[0] ? String(list[0].id) : '';
+        });
       } catch (e) {
-        if (!cancelled) {
-          const msg = e.response?.data?.error || e.message || 'Failed to load brands';
-          setBrandsError(typeof msg === 'string' ? msg : JSON.stringify(msg));
-        }
+        if (!cancelled) setBrandsError(e.response?.data?.error || e.message || 'Failed to load brands');
       } finally {
         if (!cancelled) setBrandsLoading(false);
       }
@@ -128,404 +193,506 @@ export default function CampaignNew() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only fetch; isEdit is fixed per route mount
   }, []);
 
   const loadCampaign = useCallback(async () => {
-    if (!editCampaignId || !selectedBrandId) return;
+    if (!campaignId || !selectedBrandId) return;
     setLoadingCampaign(true);
-    setLoadError('');
-    setEditBrandLocked(false);
     try {
-      const c = await fetchContentCampaign(selectedBrandId, editCampaignId);
-      setCampaignStatus((c.status || 'draft').toLowerCase());
+      const c = await fetchContentCampaign(selectedBrandId, campaignId);
+      const normalizedStatus = (c.status || 'draft').toLowerCase();
+      setCampaignStatus(normalizedStatus);
+      if (normalizedStatus === 'cancelled') {
+        toast.error('Cancelled campaigns cannot be opened');
+        navigate('/campaigns', { replace: true });
+        return;
+      }
       setName(c.name || '');
       setBrief(c.brief || '');
-      setObjective(c.objective || 'awareness');
       setStartDate(isoToDateInput(c.startDate));
       setEndDate(isoToDateInput(c.endDate));
-      const aud = c.audience || {};
-      setAgeMin(typeof aud.ageMin === 'number' ? aud.ageMin : 18);
-      setAgeMax(typeof aud.ageMax === 'number' ? aud.ageMax : 65);
-      setPostCount(
-        typeof c.postCount === 'number' && c.postCount >= POST_COUNT_MIN
-          ? Math.min(POST_COUNT_MAX, c.postCount)
-          : POST_COUNT_MIN
-      );
-      setPlatforms(
-        [...(c.platforms || [])].filter((id) => IMPLEMENTED_PLATFORM_IDS.has(String(id)))
-      );
-      setSelectedBrandId(String(c.brandId));
-      setEditBrandLocked(true);
+      setPostCount(typeof c.postCount === 'number' ? c.postCount : 1);
+      setPlatforms(Array.isArray(c.platforms) ? c.platforms : []);
+      setAnalysis({
+        objective: c.objective || '',
+        targetAudience: c.targetAudience || '',
+        contentTone: c.contentTone || '',
+        platformInsights: c.platformInsights || {},
+        schedulePlan: Array.isArray(c.schedulePlan) ? c.schedulePlan : [],
+      });
+      const list = await fetchCampaignPosts(selectedBrandId, campaignId);
+      setPosts(Array.isArray(list) ? list : []);
+      const hasStep2Fields =
+        Boolean(c.objective?.trim()) ||
+        Boolean(c.targetAudience?.trim()) ||
+        Boolean(c.contentTone?.trim()) ||
+        (Array.isArray(c.schedulePlan) && c.schedulePlan.length > 0) ||
+        (c.platformInsights && Object.keys(c.platformInsights).length > 0);
+      const hasStep3Fields = Array.isArray(list) && list.length > 0;
+      if (hasStep3Fields) setStep(3);
+      else if (hasStep2Fields) setStep(2);
+      else setStep(1);
     } catch (e) {
-      const msg = e.response?.data?.detail || e.response?.data?.error || e.message || 'Failed to load campaign';
-      setLoadError(typeof msg === 'string' ? msg : JSON.stringify(msg));
-      toast.error('Could not load campaign');
+      toast.error(e.response?.data?.detail || e.response?.data?.error || e.message || 'Failed to load campaign');
     } finally {
       setLoadingCampaign(false);
     }
-  }, [editCampaignId, selectedBrandId]);
+  }, [campaignId, navigate, selectedBrandId]);
 
   useEffect(() => {
-    if (!isEdit || !editCampaignId || !selectedBrandId) return;
-    loadCampaign();
-  }, [isEdit, editCampaignId, selectedBrandId, loadCampaign]);
+    if (campaignId && selectedBrandId) loadCampaign();
+  }, [campaignId, selectedBrandId, loadCampaign]);
 
-  useEffect(() => {
-    if (step !== 2) return;
-    setPlatforms((p) => {
-      const impl = p.filter((id) => IMPLEMENTED_PLATFORM_IDS.has(String(id)));
-      return impl.length ? impl : ['instagram'];
-    });
-  }, [step]);
+  const selectedBrand = brands.find((b) => String(b.id) === String(selectedBrandId));
+  const isCancelled = campaignStatus === 'cancelled';
+  const isReadOnlyView = campaignStatus === 'active' || campaignStatus === 'completed';
 
-  const togglePlatform = (platformId) => {
-    if (!IMPLEMENTED_PLATFORM_IDS.has(platformId)) return;
-    setPlatforms((prev) => {
-      if (prev.includes(platformId)) {
-        const next = prev.filter((id) => id !== platformId);
-        return next.length ? next : ['instagram'];
-      }
-      return [...prev, platformId];
-    });
-  };
+  const step1Valid =
+    Boolean(selectedBrandId) &&
+    name.trim() &&
+    brief.trim() &&
+    startDate &&
+    endDate &&
+    new Date(endDate) >= new Date(startDate) &&
+    platforms.length > 0 &&
+    Number.isInteger(postCount) &&
+    postCount >= POST_COUNT_MIN &&
+    postCount <= POST_COUNT_MAX;
+  const hasStep2Data =
+    Boolean(analysis.objective?.trim()) ||
+    Boolean(analysis.targetAudience?.trim()) ||
+    Boolean(analysis.contentTone?.trim()) ||
+    (Array.isArray(analysis.schedulePlan) && analysis.schedulePlan.length > 0) ||
+    (analysis.platformInsights && Object.keys(analysis.platformInsights).length > 0);
+  const hasStep3Data = Array.isArray(posts) && posts.length > 0;
 
-  const buildPayload = () => {
-    const implementedOnly = platforms.filter((id) => IMPLEMENTED_PLATFORM_IDS.has(String(id)));
-    return {
+  const saveStep1 = async () => {
+    const payload = {
       name: name.trim(),
       brief: brief.trim(),
-      platforms: implementedOnly.length ? implementedOnly : ['instagram'],
-      objective: objective.trim(),
+      platforms,
       startDate: dateInputToIso(startDate),
       endDate: dateInputToIso(endDate),
-      audience: {
-        ageMin: Math.min(ageMin, ageMax),
-        ageMax: Math.max(ageMin, ageMax),
-      },
-      postCount: Math.min(POST_COUNT_MAX, Math.max(POST_COUNT_MIN, postCount)),
+      postCount,
+      objective: analysis.objective || '',
+      targetAudience: analysis.targetAudience || '',
+      contentTone: analysis.contentTone || '',
+      platformInsights: analysis.platformInsights || {},
+      schedulePlan: analysis.schedulePlan || [],
     };
+    if (campaignId) {
+      const updated = await updateContentCampaign(selectedBrandId, campaignId, payload);
+      return updated.id;
+    }
+    const created = await createContentCampaign(selectedBrandId, payload);
+    setCampaignId(created.id);
+    return created.id;
   };
 
-  const handleBrandChange = (id) => {
-    const s = String(id);
-    setSelectedBrandId(s);
-    setDashboardBrandId(s);
-    if (isEdit) {
-      setLoadError('');
-      setEditBrandLocked(false);
-      setLoadingCampaign(true);
+  const runStep2 = async () => {
+    if (!step1Valid) {
+      toast.error('Complete all required fields before continuing');
+      return;
+    }
+    setSaving(true);
+    setProcessingMessage('Our AI agents are at work on Step 2. Generating campaign analysis...');
+    try {
+      const cid = await saveStep1();
+      const analysisResp = await runCampaignAnalysis({
+        brand: {
+          name: selectedBrand?.name || '',
+          businessType: selectedBrand?.businessType || '',
+          location: `${selectedBrand?.city || ''}, ${selectedBrand?.country || ''}`.trim(),
+        },
+        campaign: {
+          id: cid,
+          name: name.trim(),
+          brief: brief.trim(),
+          startDate: dateInputToIso(startDate),
+          endDate: dateInputToIso(endDate),
+          postCount,
+          platforms,
+        },
+      });
+      const mapped = fromSnakeAnalysis(analysisResp.analysis || {});
+      setAnalysis(mapped);
+      await updateContentCampaign(selectedBrandId, cid, {
+        objective: mapped.objective,
+        targetAudience: mapped.targetAudience,
+        contentTone: mapped.contentTone,
+        platformInsights: mapped.platformInsights,
+        schedulePlan: mapped.schedulePlan,
+      });
+      setStep(2);
+    } catch (e) {
+      toast.error(e.response?.data?.error || e.message || 'Analysis failed');
+    } finally {
+      setSaving(false);
+      setProcessingMessage('');
     }
   };
 
-  const handleGenerate = async () => {
-    if (!selectedBrandId || !brands.some((b) => String(b.id) === String(selectedBrandId))) {
-      toast.error('Select a brand for this campaign');
+  const runStep3 = async () => {
+    if (!campaignId) {
+      toast.error('Save campaign first');
       return;
     }
-    if (!name.trim() || !brief.trim() || !objective) {
-      toast.error('Name, brief, and objective are required');
-      return;
+    setGenerating(true);
+    setProcessingMessage('Our AI agents are at work on Step 3. Generating posts and SEO...');
+    try {
+      await updateContentCampaign(selectedBrandId, campaignId, {
+        objective: analysis.objective,
+        targetAudience: analysis.targetAudience,
+        contentTone: analysis.contentTone,
+        platformInsights: analysis.platformInsights,
+        schedulePlan: analysis.schedulePlan,
+      });
+      const res = await runCampaignGeneration({
+        brand: {
+          name: selectedBrand?.name || '',
+          businessType: selectedBrand?.businessType || '',
+          location: `${selectedBrand?.city || ''}, ${selectedBrand?.country || ''}`.trim(),
+        },
+        campaign: {
+          id: campaignId,
+        name: name.trim(),
+        brief: brief.trim(),
+          startDate: dateInputToIso(startDate),
+          endDate: dateInputToIso(endDate),
+          postCount,
+          platforms,
+        },
+        analysis: toSnakeAnalysis(analysis),
+      });
+      const contentPosts = res?.data?.content?.posts || [];
+      const seoPosts = res?.data?.seo?.posts || [];
+      const existing = await fetchCampaignPosts(selectedBrandId, campaignId);
+      const existingMap = new Map(existing.map((p) => [`${p.scheduleSeq}:${p.platform}`, p]));
+
+      const merged = contentPosts.map((p, idx) => {
+        const seo = seoPosts.find(
+          (s) =>
+            Number(s.schedule_seq) === Number(p.schedule_seq) &&
+            String(s.platform) === String(p.platform)
+        );
+        return {
+          scheduleSeq: Number(p.schedule_seq || idx + 1),
+          platform: p.platform || 'instagram',
+          scheduledAt:
+            p.scheduled_at || analysis.schedulePlan[idx]?.scheduledAt || dateInputToIso(startDate),
+          focus: p.focus || analysis.schedulePlan[idx]?.focus || '',
+          caption: p.caption || '',
+          hashtags: p.hashtags || [],
+          selectedHashtags: (p.hashtags || []).slice(0, 5),
+          postType: p.post_type || 'Photo',
+          callToAction: p.call_to_action || '',
+          seo: seo?.optimized || {},
+          media: {
+            imagePrompt: p.image_prompt || null,
+            imageUrl: p.image_url || null,
+            mediaPrompts: p.media_prompts || [],
+            notes: p.notes || '',
+          },
+        };
+      });
+
+      const saved = [];
+      for (const item of merged) {
+        const key = `${item.scheduleSeq}:${item.platform}`;
+        const ex = existingMap.get(key);
+        if (ex) {
+          const updated = await updateCampaignPost(selectedBrandId, campaignId, ex.id, item);
+          saved.push(updated);
+        } else {
+          const created = await createCampaignPost(selectedBrandId, campaignId, item);
+          saved.push(created);
+        }
+      }
+      setPosts(saved);
+      setStep(3);
+    } catch (e) {
+      toast.error(e.response?.data?.error || e.message || 'Post generation failed');
+    } finally {
+      setGenerating(false);
+      setProcessingMessage('');
     }
-    if (!startDate || !endDate) {
-      toast.error('Start and end dates are required');
-      return;
-    }
-    if (!platforms.some((id) => IMPLEMENTED_PLATFORM_IDS.has(String(id)))) {
-      toast.error('Select Instagram — it is the only channel available for generation right now');
-      return;
-    }
-    const payload = buildPayload();
+  };
+
+  const savePostEdits = async () => {
+    if (!campaignId) return;
     setSaving(true);
     try {
-      if (isEdit) {
-        await updateContentCampaign(selectedBrandId, editCampaignId, payload);
-      } else {
-        await createContentCampaign(selectedBrandId, payload);
+      for (const p of posts) {
+        await updateCampaignPost(selectedBrandId, campaignId, p.id, {
+          caption: p.caption,
+          selectedHashtags: p.selectedHashtags || [],
+        });
       }
-      toast.success(
-        'Campaign saved. AI content generation is not available yet — it will run from this flow in a future update.'
-      );
+      await updateContentCampaign(selectedBrandId, campaignId, { status: 'scheduled' });
+      setCampaignStatus('scheduled');
+      toast.success('Posts updated and campaign scheduled');
       navigate('/campaigns', { replace: true });
     } catch (e) {
-      const d = e.response?.data?.detail;
-      const msg =
-        typeof d === 'string'
-          ? d
-          : Array.isArray(d)
-            ? d.map((x) => x.msg || x).join(', ')
-            : e.response?.data?.error || e.message || 'Failed to save';
-      toast.error(msg);
+      toast.error(e.response?.data?.error || e.message || 'Failed to save post edits');
     } finally {
       setSaving(false);
     }
   };
 
-  const selectedBrand = brands.find((b) => String(b.id) === String(selectedBrandId));
-  const selectedBrandName = selectedBrand?.name ?? '—';
+  const toggleSelectedHashtag = (postId, tag) => {
+    setPosts((curr) =>
+      curr.map((p) => {
+        if (p.id !== postId) return p;
+        const selected = new Set(p.selectedHashtags || []);
+        if (selected.has(tag)) {
+          selected.delete(tag);
+        } else if (selected.size < 5) {
+          selected.add(tag);
+        }
+        return { ...p, selectedHashtags: [...selected] };
+      })
+    );
+  };
 
-  if (brandsLoading) {
+  const updateInsightValue = (key, value) => {
+    setAnalysis((curr) => ({
+      ...curr,
+      platformInsights: {
+        ...(curr.platformInsights || {}),
+        [key]: value,
+      },
+    }));
+  };
+
+  const deleteInsightKey = (key) => {
+    setAnalysis((curr) => {
+      const next = { ...(curr.platformInsights || {}) };
+      delete next[key];
+      return { ...curr, platformInsights: next };
+    });
+  };
+
+  if (brandsLoading || loadingCampaign) {
     return (
-      <div className="flex min-h-[16rem] items-center justify-center">
-        <div
-          className="h-10 w-10 animate-spin rounded-full border-2 border-gray-200 border-t-blue-600"
-          aria-hidden
-        />
-      </div>
+      <div className="flex min-h-[12rem] items-center justify-center">
+        <div className="h-10 w-10 animate-spin rounded-full border-2 border-gray-200 border-t-blue-600" />
+              </div>
     );
   }
-
-  if (brandsError) {
+  if (brandsError) return <div className={`${shellCard} p-6`}><p className="text-red-700">{brandsError}</p></div>;
+  if (!brands.length) return <div className={`${shellCard} p-6`}><p>No brands found.</p></div>;
+  if (isCancelled) {
     return (
-      <div className={`${shellCard} p-6 md:p-8`}>
-        <h1 className="text-xl font-semibold text-gray-900">Could not load brands</h1>
-        <p className="mt-2 text-sm text-red-700">{brandsError}</p>
-        <Link to="/brands" className="mt-4 inline-flex text-sm font-semibold text-blue-600 hover:text-blue-800">
-          Manage brands
-        </Link>
-      </div>
-    );
-  }
-
-  if (brands.length === 0) {
-    return (
-      <div className={`${shellCard} p-6 md:p-8`}>
-        <h1 className="text-xl font-semibold text-gray-900">Create a brand first</h1>
-        <p className="mt-2 text-sm text-gray-600">
-          Campaigns are created under a brand. Add a brand to your workspace, then return here.
-        </p>
-        <Link
-          to="/brands"
-          className="mt-4 inline-flex text-sm font-semibold text-blue-600 hover:text-blue-800"
-        >
-          Go to brands
-        </Link>
-      </div>
-    );
-  }
-
-  if (isEdit && !selectedBrandId) {
-    return (
-      <div className={`${shellCard} p-6 md:p-8`}>
-        <h1 className="text-xl font-semibold text-gray-900">Which brand is this campaign under?</h1>
-        <p className="mt-2 text-sm text-gray-600">
-          Choose the brand that owns this campaign so we can load it. This matches the brand column on the
-          campaigns list.
-        </p>
-        <label htmlFor="campaign-brand-load" className="mt-6 mb-1 block text-sm font-medium text-gray-700">
-          Brand
-        </label>
-        <div className="mt-1 flex items-center gap-3">
-          <BrandAvatar
-            name={selectedBrand?.name ?? ''}
-            logoUrl={selectedBrand?.logo_url}
-            size="md"
-          />
-          <select
-          id="campaign-brand-load"
-          value={selectedBrandId}
-          onChange={(e) => handleBrandChange(e.target.value)}
-          className={`${inputClass} min-w-0 flex-1`}
-        >
-          <option value="">Select a brand…</option>
-          {brands.map((b) => (
-            <option key={b.id} value={String(b.id)}>
-              {b.name}
-            </option>
-          ))}
-        </select>
-        </div>
-        <Link to="/campaigns" className="mt-6 inline-block text-sm font-semibold text-blue-600">
+      <div className={`${shellCard} p-6`}>
+        <h1 className="text-xl font-semibold text-gray-900">Campaign unavailable</h1>
+        <p className="mt-2 text-sm text-gray-600">Cancelled campaigns cannot be opened.</p>
+        <Link to="/campaigns" className="mt-4 inline-block text-sm font-semibold text-blue-600">
           Back to campaigns
         </Link>
       </div>
     );
   }
 
-  if (isEdit && loadingCampaign) {
-    return (
-      <div className="flex min-h-[16rem] items-center justify-center">
-        <div
-          className="h-10 w-10 animate-spin rounded-full border-2 border-gray-200 border-t-blue-600"
-          aria-hidden
-        />
-      </div>
-    );
-  }
-
-  if (isEdit && loadError) {
-    return (
-      <div className={`${shellCard} p-6 md:p-8`}>
-        <h1 className="text-lg font-semibold text-gray-900">Could not load campaign</h1>
-        <p className="mt-2 text-sm text-red-700">{loadError}</p>
-        <p className="mt-4 text-sm text-gray-600">
-          If this campaign belongs to another brand, select it below — the page will reload the campaign.
-        </p>
-        <label htmlFor="campaign-brand-retry" className="mt-4 mb-1 block text-sm font-medium text-gray-700">
-          Brand
-        </label>
-        <div className="mt-1 flex max-w-md items-center gap-3">
-          <BrandAvatar
-            name={selectedBrand?.name ?? ''}
-            logoUrl={selectedBrand?.logo_url}
-            size="md"
-          />
-          <select
-          id="campaign-brand-retry"
-          value={selectedBrandId}
-          onChange={(e) => handleBrandChange(e.target.value)}
-          className={`${inputClass} min-w-0 flex-1`}
-        >
-          {brands.map((b) => (
-            <option key={b.id} value={String(b.id)}>
-              {b.name}
-            </option>
-          ))}
-        </select>
-        </div>
-        <Link to="/campaigns" className="mt-6 mr-6 inline-block text-sm font-semibold text-blue-600">
-          Back to campaigns
-        </Link>
-      </div>
-    );
-  }
-
-  const objectiveLabel =
-    campaignTypes.find((t) => t.id === objective)?.name || objective || '—';
-
-  const fmtDate = (iso) => {
-    if (!iso) return '—';
-    try {
-      return format(new Date(iso), 'MMM d, yyyy');
-    } catch {
-      return '—';
-    }
-  };
-
-  const handleArchive = async () => {
-    if (!selectedBrandId || !editCampaignId) return;
-    if (!window.confirm('Archive this campaign? It will be hidden from lists.')) return;
-    setArchiving(true);
-    try {
-      await updateContentCampaign(selectedBrandId, editCampaignId, { status: 'archived' });
-      toast.success('Campaign archived');
-      navigate('/campaigns', { replace: true });
-    } catch (e) {
-      const d = e.response?.data?.detail;
-      const msg =
-        typeof d === 'string'
-          ? d
-          : Array.isArray(d)
-            ? d.map((x) => x.msg || x).join(', ')
-          : e.response?.data?.error || e.message || 'Failed to archive';
-      toast.error(msg);
-    } finally {
-      setArchiving(false);
-    }
-  };
-
-  const readOnlyFields = (
-    <div className="mt-6 space-y-4 text-sm">
-      <div>
-        <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Brand</p>
-        <div className="mt-1 flex items-center gap-2">
-          <BrandAvatar
-            name={selectedBrand?.name ?? selectedBrandName}
-            logoUrl={selectedBrand?.logo_url}
-            size="md"
-          />
-          <p className="font-semibold text-gray-900">{selectedBrandName}</p>
-        </div>
-      </div>
-      <div>
-        <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Campaign</p>
-        <p className="mt-1 font-semibold text-gray-900">{name || '—'}</p>
-      </div>
-      <div>
-        <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Brief</p>
-        <p className="mt-1 whitespace-pre-wrap text-gray-700">{brief || '—'}</p>
-      </div>
-      <div>
-        <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Objective</p>
-        <p className="mt-1 text-gray-700">{objectiveLabel}</p>
-      </div>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Start</p>
-          <p className="mt-1 tabular-nums text-gray-700">{fmtDate(dateInputToIso(startDate))}</p>
-        </div>
-        <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-gray-500">End</p>
-          <p className="mt-1 tabular-nums text-gray-700">{fmtDate(dateInputToIso(endDate))}</p>
-        </div>
-      </div>
-      <div>
-        <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Channel</p>
-        <div className="mt-1">
-          <PlatformIconRow platforms={platforms} iconClassName="h-5 w-5" gapClassName="gap-1.5" />
-        </div>
-      </div>
-      <div>
-        <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Audience</p>
-        <p className="mt-1 text-gray-700">
-          Ages {ageMin}–{ageMax}
-        </p>
-      </div>
-      <div>
-        <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Posts</p>
-        <p className="mt-1 text-gray-700">{postCount}</p>
-      </div>
-    </div>
-  );
-
-  if (isEdit && !loadingCampaign && campaignStatus === 'active') {
+  if (isReadOnlyView) {
     return (
       <div className="w-full space-y-8">
-        <div className={`${shellCard} p-6 md:p-8`}>
-          <h1 className="text-xl font-semibold text-gray-900">Active campaign</h1>
-          <p className="mt-2 text-sm text-gray-600 leading-relaxed">
-            This campaign is live. Content cannot be edited while status is Active.
-          </p>
-          {readOnlyFields}
-          <Link
-            to="/campaigns"
-            className="mt-6 inline-block text-sm font-semibold text-blue-600 hover:text-blue-800"
-          >
-            ← Back to campaigns
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
-  if (
-    isEdit &&
-    !loadingCampaign &&
-    (campaignStatus === 'completed' || campaignStatus === 'cancelled')
-  ) {
-    return (
-      <div className="w-full space-y-8">
-        <div className={`${shellCard} p-6 md:p-8`}>
-          <h1 className="text-xl font-semibold text-gray-900">
-            {campaignStatus === 'completed' ? 'Completed' : 'Cancelled'} campaign
-          </h1>
-          <p className="mt-2 text-sm text-gray-600 leading-relaxed">
-            This campaign is closed. You can archive it to remove it from your main list.
-          </p>
-          {readOnlyFields}
-          <div className="mt-6 flex flex-wrap gap-3">
+        <div className={`${shellCard} p-6 md:p-8 space-y-6`}>
+          <div className="flex items-center justify-center">
+            <h1 className="text-2xl font-semibold tracking-tight text-gray-900">{name || 'Campaign details'}</h1>
+          </div>
+          <div className="flex items-center justify-center">
+            <span
+              className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                campaignStatus === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-indigo-100 text-indigo-800'
+              }`}
+            >
+              {campaignStatus === 'active' ? 'Active' : 'Completed'}
+            </span>
+          </div>
+          <div className="mx-auto flex w-full max-w-md items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white p-1">
             <button
               type="button"
-              onClick={handleArchive}
-              disabled={archiving}
-              className="rounded-lg bg-slate-800 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-900 disabled:opacity-50"
+              onClick={() => setReadOnlyTab('posts')}
+              className={`rounded-md px-4 py-2 text-sm font-semibold ${
+                readOnlyTab === 'posts' ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-100'
+              }`}
             >
-              {archiving ? 'Archiving…' : 'Archive campaign'}
+              Posts
             </button>
-            <Link
-              to="/campaigns"
-              className="inline-flex items-center rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-800 shadow-sm hover:bg-gray-50"
+            <button
+              type="button"
+              onClick={() => setReadOnlyTab('details')}
+              className={`rounded-md px-4 py-2 text-sm font-semibold ${
+                readOnlyTab === 'details' ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-100'
+              }`}
             >
+              Details
+            </button>
+          </div>
+
+          {readOnlyTab === 'posts' ? (
+            <div className="space-y-4">
+              {(posts || []).length === 0 ? (
+                <p className="text-sm text-gray-600">No posts available for this campaign yet.</p>
+              ) : (
+                (posts || []).map((p) => (
+                  <div key={p.id} className="space-y-3 rounded-xl border border-gray-200 p-4">
+                    <p className="text-sm font-medium text-gray-900">
+                      Post {p.scheduleSeq} ·{' '}
+                      {(() => {
+                        const pid = String(p.platform || '').toLowerCase();
+                        const Icon = platformIconMap[pid];
+                        return Icon ? (
+                          <Icon className="inline h-4 w-4 align-text-bottom text-gray-700" aria-hidden />
+                        ) : (
+                          pid || '—'
+                        );
+                      })()}{' '}
+                      · {p.scheduledAt ? format(new Date(p.scheduledAt), 'MMM d, yyyy h:mm a') : '—'}
+                    </p>
+                    {(() => {
+                      const imageUrl = p.media?.imageUrl || p.media?.image_url || null;
+                      const imagePrompt = p.media?.imagePrompt || p.media?.image_prompt || '';
+                      if (!imageUrl) return null;
+                      return (
+                        <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+                          <img
+                            src={imageUrl}
+                            alt={imagePrompt || 'Generated campaign media'}
+                            className="h-auto w-full object-cover"
+                          />
+                        </div>
+                      );
+                    })()}
+                    <div className="whitespace-pre-wrap rounded-lg border border-gray-200 bg-white p-3 text-sm text-gray-800">
+                      {p.caption || '—'}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {(p.selectedHashtags?.length ? p.selectedHashtags : p.hashtags || []).map((tag) => (
+                        <span key={tag} className="rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-800">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          ) : (
+            <div className="space-y-5">
+              <div className="rounded-xl border border-gray-200 bg-white p-4">
+                <div className="flex items-center gap-3">
+                  <BrandAvatar name={selectedBrand?.name || ''} logoUrl={selectedBrand?.logo_url} size="md" />
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">{selectedBrand?.name || 'Brand'}</p>
+                    <p className="text-xs text-gray-500">{name || 'Campaign'}</p>
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className={labelClass}>Campaign brief</label>
+                  <div className="whitespace-pre-wrap rounded-lg border border-gray-200 bg-white p-3 text-sm text-gray-800">
+                    {brief || '—'}
+                  </div>
+                </div>
+                <div>
+                  <label className={labelClass}>Timeline</label>
+                  <div className="rounded-lg border border-gray-200 bg-white p-3 text-sm text-gray-800">
+                    {startDate || '—'} to {endDate || '—'}
+                  </div>
+                </div>
+                <div>
+                  <label className={labelClass}>Number of posts</label>
+                  <div className="rounded-lg border border-gray-200 bg-white p-3 text-sm text-gray-800">{postCount}</div>
+                </div>
+                <div>
+                  <label className={labelClass}>Platforms</label>
+                  <div className="rounded-lg border border-gray-200 bg-white p-3">
+                    <div className="flex items-center gap-2">
+                      {(platforms || []).map((pidRaw, idx) => {
+                        const pid = String(pidRaw || '').toLowerCase();
+                        const Icon = platformIconMap[pid];
+                        if (!Icon) return null;
+                        return <Icon key={`${pid}-${idx}`} className="h-4 w-4 text-gray-700" aria-hidden />;
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <label className={labelClass}>Objective</label>
+                <div className="whitespace-pre-wrap rounded-lg border border-gray-200 bg-white p-3 text-sm text-gray-800">
+                  {analysis.objective || '—'}
+                </div>
+              </div>
+              <div>
+                <label className={labelClass}>Target Audience</label>
+                <div className="whitespace-pre-wrap rounded-lg border border-gray-200 bg-white p-3 text-sm text-gray-800">
+                  {analysis.targetAudience || '—'}
+                </div>
+              </div>
+              <div>
+                <label className={labelClass}>Content Tone</label>
+                <div className="whitespace-pre-wrap rounded-lg border border-gray-200 bg-white p-3 text-sm text-gray-800">
+                  {analysis.contentTone || '—'}
+                </div>
+              </div>
+              <div>
+                <label className={labelClass}>Platform Insights</label>
+                <div className="rounded-lg border border-gray-200 bg-white p-3">
+                  {Object.keys(analysis.platformInsights || {}).length === 0 ? (
+                    <p className="text-sm text-gray-500">No insights available.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {Object.entries(analysis.platformInsights || {}).map(([key, value]) => (
+                        <div key={key}>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">{formatInsightKey(key)}</p>
+                          <p className="whitespace-pre-wrap text-sm text-gray-800">{String(value ?? '')}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div>
+                <label className={labelClass}>Schedule Plan</label>
+                <div className="space-y-3 rounded-lg border border-gray-200 bg-white p-3">
+                  {(analysis.schedulePlan || []).length === 0 ? (
+                    <p className="text-sm text-gray-500">No schedule entries generated yet.</p>
+                  ) : (
+                    (analysis.schedulePlan || []).map((s, idx) => (
+                      <div key={`${s.seq}-${idx}`} className="rounded-lg border border-gray-200 p-3">
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <p className="text-sm font-semibold text-gray-900">Post {s.seq}</p>
+                          <div className="flex items-center gap-1">
+                            {(s.platforms || []).map((pidRaw, iconIdx) => {
+                              const pid = String(pidRaw || '').toLowerCase();
+                              const Icon = platformIconMap[pid];
+                              if (!Icon) return null;
+                              return <Icon key={`${pid}-${iconIdx}`} className="h-4 w-4 text-gray-700" aria-hidden />;
+                            })}
+                          </div>
+                        </div>
+                        <div className="space-y-1 text-sm text-gray-700">
+                          <p>
+                            <span className="font-medium text-gray-800">When: </span>
+                            {s.scheduledAt ? format(new Date(s.scheduledAt), 'MMM d, yyyy h:mm a') : '—'}
+                          </p>
+                          <p>
+                            <span className="font-medium text-gray-800">Focus: </span>
+                            {s.focus || '—'}
+                          </p>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+          <div>
+            <Link to="/campaigns" className="inline-block text-sm font-semibold text-blue-600">
               Back to campaigns
             </Link>
           </div>
@@ -534,362 +701,467 @@ export default function CampaignNew() {
     );
   }
 
-  const step1Valid =
-    Boolean(selectedBrandId && brands.some((b) => String(b.id) === String(selectedBrandId))) &&
-    name.trim() &&
-    brief.trim() &&
-    objective &&
-    startDate &&
-    endDate &&
-    new Date(endDate) >= new Date(startDate) &&
-    ageMin >= AGE_FLOOR &&
-    ageMax <= AGE_CEIL &&
-    ageMax >= ageMin &&
-    Number.isInteger(postCount) &&
-    postCount >= POST_COUNT_MIN &&
-    postCount <= POST_COUNT_MAX;
-
-  const goToStep = (target) => {
-    if (target === 1) {
+  const goToStep = (targetStep) => {
+    if (step === 2 && editingStep2 && targetStep !== 2) return;
+    if (targetStep === 1) {
       setStep(1);
       return;
     }
-    if (target === 2 && !step1Valid) {
-      toast.error('Complete all required fields in Plan before continuing.');
-      return;
-    }
-    setStep(2);
+    if (targetStep === 2 && !(hasStep2Data || hasStep3Data)) return;
+    if (targetStep === 3 && !hasStep3Data) return;
+    setStep(targetStep);
   };
 
-  const nextStep = () => {
+  const handleStep1Next = async () => {
     if (!step1Valid) {
-      toast.error('Complete all required fields in Plan before continuing.');
+      toast.error('Complete all required fields before continuing');
       return;
     }
-    setStep(2);
+    if (hasStep3Data) {
+      setStep(3);
+      return;
+    }
+    if (hasStep2Data) {
+      setStep(2);
+      return;
+    }
+    await runStep2();
   };
 
-  const prevStep = () => setStep(1);
-
-  const renderStep1 = () => (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-semibold tracking-tight text-gray-900 sm:text-3xl">
-          {isEdit ? 'Edit campaign' : 'New campaign'}
-        </h2>
-        <p className="mt-2 text-sm text-gray-600 leading-relaxed">
-          Step 1 of 2 — Plan the campaign (objective, schedule, and audience age range). Pick which brand this
-          campaign belongs to; location follows that brand. No AI generation yet — everything is saved when you
-          finish.
-        </p>
-      </div>
-
-      <div>
-        <label htmlFor="campaign-brand" className="mb-1 block text-sm font-medium text-gray-700">
-          Brand <span className="text-red-500">*</span>
-        </label>
-        <div className="mt-1 flex items-center gap-3">
-          <BrandAvatar
-            name={selectedBrand?.name ?? ''}
-            logoUrl={selectedBrand?.logo_url}
-            size="md"
-          />
-          <select
-          id="campaign-brand"
-          value={selectedBrandId}
-          onChange={(e) => handleBrandChange(e.target.value)}
-          disabled={brandsLoading || (isEdit && (editBrandLocked || loadingCampaign))}
-          className={`${inputClass} min-w-0 flex-1`}
-        >
-          {brands.map((b) => (
-            <option key={b.id} value={String(b.id)}>
-              {b.name}
-            </option>
-          ))}
-        </select>
-        </div>
-        <p className="mt-1 text-xs text-gray-500">
-          {isEdit && editBrandLocked
-            ? 'Campaigns cannot be moved between brands.'
-            : 'Also updates your dashboard workspace brand when you change this.'}
-        </p>
-      </div>
-
-      <div>
-        <label htmlFor="campaign-name" className="mb-1 block text-sm font-medium text-gray-700">
-          Campaign name <span className="text-red-500">*</span>
-        </label>
-        <input
-          id="campaign-name"
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          className={inputClass}
-          placeholder="e.g., Summer launch 2025"
-        />
-      </div>
-
-      <div>
-        <label htmlFor="campaign-brief" className="mb-1 block text-sm font-medium text-gray-700">
-          Campaign brief <span className="text-red-500">*</span>
-        </label>
-        <textarea
-          id="campaign-brief"
-          rows={4}
-          value={brief}
-          onChange={(e) => setBrief(e.target.value)}
-          className={inputClass}
-          placeholder="Goals, key messages, and what success looks like…"
-        />
-      </div>
-
-      <div>
-        <p className="mb-2 text-sm font-medium text-gray-700">
-          Objective <span className="text-red-500">*</span>
-        </p>
-        <div className="grid auto-rows-fr grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-          {campaignTypes.map((type) => (
-            <button
-              key={type.id}
-              type="button"
-              onClick={() => setObjective(type.id)}
-              className={`flex h-full w-full flex-col items-start gap-2 rounded-xl border border-gray-200 bg-white px-4 py-4 text-left shadow-sm transition-colors ${
-                objective === type.id
-                  ? 'border-blue-500 bg-blue-50/90 ring-2 ring-blue-500/20'
-                  : 'hover:border-blue-200'
-              }`}
-            >
-              <h3 className="w-full text-left text-base font-semibold leading-snug text-gray-900">
-                {type.name}
-              </h3>
-              <p className="w-full text-left text-sm leading-relaxed text-gray-600">{type.description}</p>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div>
-          <label htmlFor="start-date" className="mb-1 block text-sm font-medium text-gray-700">
-            Start date <span className="text-red-500">*</span>
-          </label>
-          <input
-            id="start-date"
-            type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            className={inputClass}
-          />
-        </div>
-        <div>
-          <label htmlFor="end-date" className="mb-1 block text-sm font-medium text-gray-700">
-            End date <span className="text-red-500">*</span>
-          </label>
-          <input
-            id="end-date"
-            type="date"
-            value={endDate}
-            min={startDate}
-            onChange={(e) => setEndDate(e.target.value)}
-            className={inputClass}
-          />
-        </div>
-      </div>
-
-      <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
-        <div className="flex items-center justify-between gap-2">
-          <h3 className="text-base font-semibold text-gray-900">Audience age range</h3>
-          <span className="text-sm font-semibold tabular-nums text-gray-900">
-            {ageMin} – {ageMax}
-          </span>
-        </div>
-        <p className="mt-1 text-xs text-gray-500">
-          {AGE_FLOOR}–{AGE_CEIL}. Target geography comes from the brand.
-        </p>
-        <div className="mt-4 grid grid-cols-2 gap-4">
-          <div>
-            <label htmlFor="age-min" className="mb-1 block text-sm font-medium text-gray-700">
-              Minimum age
-            </label>
-            <input
-              id="age-min"
-              type="number"
-              min={AGE_FLOOR}
-              max={ageMax}
-              value={ageMin}
-              onChange={(e) => setAgeMin(parseInt(e.target.value, 10) || AGE_FLOOR)}
-              className={inputClass}
-            />
-          </div>
-          <div>
-            <label htmlFor="age-max" className="mb-1 block text-sm font-medium text-gray-700">
-              Maximum age
-            </label>
-            <input
-              id="age-max"
-              type="number"
-              min={ageMin}
-              max={AGE_CEIL}
-              value={ageMax}
-              onChange={(e) => setAgeMax(parseInt(e.target.value, 10) || AGE_CEIL)}
-              className={inputClass}
-            />
-          </div>
-        </div>
-      </div>
-
-      <div>
-        <label htmlFor="post-count" className="mb-1 block text-sm font-medium text-gray-700">
-          Number of posts <span className="text-red-500">*</span>
-        </label>
-        <input
-          id="post-count"
-          type="number"
-          min={POST_COUNT_MIN}
-          max={POST_COUNT_MAX}
-          step={1}
-          value={postCount}
-          onChange={(e) => {
-            const v = parseInt(e.target.value, 10);
-            setPostCount(Number.isFinite(v) ? v : POST_COUNT_MIN);
-          }}
-          onBlur={() => {
-            setPostCount((p) =>
-              Math.min(POST_COUNT_MAX, Math.max(POST_COUNT_MIN, Number.isInteger(p) ? p : POST_COUNT_MIN))
-            );
-          }}
-          className={inputClass}
-        />
-        <p className="mt-1 text-xs text-gray-500">
-          Planned post volume for this campaign ({POST_COUNT_MIN}–{POST_COUNT_MAX}).
-        </p>
-      </div>
-
-      <button
-        type="button"
-        onClick={nextStep}
-        disabled={!step1Valid}
-        className="rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        Next: Channel
-      </button>
-    </div>
-  );
-
-  const renderStep2 = () => (
-    <div className="space-y-6">
-      <button
-        type="button"
-        onClick={prevStep}
-        className="mb-2 flex items-center text-sm font-semibold text-blue-600 hover:text-blue-800"
-      >
-        ← Back to plan
-      </button>
-      <h2 className="text-2xl font-semibold tracking-tight text-gray-900 sm:text-3xl">Channel</h2>
-      <p className="text-sm text-gray-600">
-        Only <span className="font-medium text-gray-800">Instagram</span> is available for generation
-        today. Other networks are shown for reference and will be enabled later.
-      </p>
-
-      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
-        {allPlatforms.map((platform) => {
-          const Icon = platform.Icon;
-          const implemented = platform.implemented;
-          const selected = platforms.includes(platform.id);
-          return (
-            <button
-              key={platform.id}
-              type="button"
-              disabled={!implemented}
-              aria-label={implemented ? platform.name : `${platform.name} (coming soon)`}
-              title={
-                implemented
-                  ? platform.name
-                  : `${platform.name} — coming soon`
-              }
-              aria-pressed={implemented ? selected : undefined}
-              onClick={() => implemented && togglePlatform(platform.id)}
-              className={[
-                'relative flex flex-col items-center justify-center rounded-xl border p-3 shadow-sm transition-colors',
-                !implemented
-                  ? 'cursor-not-allowed border-gray-100 bg-gray-50 opacity-45'
-                  : selected
-                    ? 'border-blue-500 bg-blue-50/90 ring-2 ring-blue-500/20'
-                    : 'border-gray-200 bg-white hover:border-blue-200',
-              ].join(' ')}
-            >
-              <Icon className={`h-8 w-8 ${implemented ? 'text-gray-800' : 'text-gray-400'}`} aria-hidden />
-              {!implemented ? (
-                <span className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
-                  Soon
-                </span>
-              ) : null}
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="flex flex-col gap-3 sm:flex-row sm:justify-between">
-        <button
-          type="button"
-          onClick={prevStep}
-          className="rounded-lg border border-gray-300 bg-white px-6 py-2.5 text-sm font-semibold text-gray-800 shadow-sm hover:bg-gray-50"
-        >
-          Back
-        </button>
-        <button
-          type="button"
-          onClick={handleGenerate}
-          disabled={
-            saving ||
-            !platforms.some((id) => IMPLEMENTED_PLATFORM_IDS.has(String(id)))
-          }
-          className="rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {saving ? 'Saving…' : 'Generate'}
-        </button>
-      </div>
-    </div>
-  );
+  const handleStep2Next = async () => {
+    if (hasStep3Data) {
+      setStep(3);
+      return;
+    }
+    await runStep3();
+  };
 
   return (
     <div className="w-full space-y-8">
-      <div className={`${shellCard} p-6 md:p-8`}>
-        <div className="mb-8">
-          <div className="flex items-center justify-between gap-2">
-            {[1, 2].map((stepNum) => (
-              <button
-                key={stepNum}
-                type="button"
-                onClick={() => goToStep(stepNum)}
-                disabled={stepNum === 2 && !step1Valid}
-                title={
-                  stepNum === 2 && !step1Valid
-                    ? 'Complete all required fields in Plan first'
-                    : undefined
-                }
-                className="flex flex-1 flex-col items-center rounded-lg p-1 text-center disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <div
-                  className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold shadow-sm ${
-                    step === stepNum
-                      ? 'bg-blue-600 text-white ring-2 ring-blue-500/25'
-                      : step > stepNum
-                        ? 'border border-emerald-200 bg-emerald-50 text-emerald-800'
-                        : 'border border-gray-200 bg-white text-gray-500'
-                  }`}
+      <div className={`${shellCard} p-6 md:p-8 space-y-6`}>
+        <div className="flex items-center justify-center">
+          <h1 className="text-2xl font-semibold tracking-tight text-gray-900">
+            {isEdit ? 'Edit campaign' : 'New campaign'}
+          </h1>
+        </div>
+        <div className="mx-auto flex w-full max-w-3xl items-start justify-center gap-2">
+          {stepMeta.map((s, idx) => {
+            const isActive = step === s.n;
+            const isCompleted = step > s.n;
+            const isEnabled =
+              s.n === 1 ? true : s.n === 2 ? hasStep2Data || hasStep3Data : hasStep3Data;
+            return (
+              <div key={s.n} className="flex items-start">
+                        <button
+                          type="button"
+                  onClick={() => goToStep(s.n)}
+                  disabled={!isEnabled || (step === 2 && editingStep2 && s.n !== 2)}
+                  className="flex w-28 flex-col items-center text-center disabled:cursor-not-allowed"
                 >
-                  {stepNum}
-                </div>
-                <span className="mt-2 text-center text-sm font-semibold text-gray-700">
-                  {stepNum === 1 ? 'Plan' : 'Channel'}
-                </span>
+                          <span 
+                    className={[
+                      'flex h-10 w-10 items-center justify-center rounded-full border text-sm font-semibold transition-colors',
+                      isActive
+                        ? 'border-blue-600 bg-blue-600 text-white ring-2 ring-blue-500/25'
+                        : isCompleted
+                          ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+                          : isEnabled
+                            ? 'border-gray-300 bg-white text-gray-700'
+                            : 'border-gray-200 bg-gray-100 text-gray-400',
+                    ].join(' ')}
+                  >
+                    {s.n}
+                          </span>
+                  <span
+                    className={[
+                      'mt-2 text-xs font-medium',
+                      isActive
+                        ? 'text-gray-900'
+                        : isCompleted
+                          ? 'text-gray-700'
+                          : isEnabled
+                            ? 'text-gray-600'
+                            : 'text-gray-400',
+                    ].join(' ')}
+                  >
+                    {s.title}
+                  </span>
+                          </button>
+                {idx < stepMeta.length - 1 ? (
+                  <div
+                    className={`mt-5 h-px w-24 ${
+                      step > s.n ? 'bg-emerald-300' : 'bg-gray-200'
+                    }`}
+                    aria-hidden
+                  />
+                ) : null}
+                        </div>
+            );
+          })}
+                      </div>
+        {processingMessage ? (
+          <div className="flex items-center gap-3 rounded-lg border border-blue-100 bg-blue-50/70 px-4 py-3 text-sm text-blue-900">
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600" />
+            <span>{processingMessage}</span>
+                    </div>
+        ) : null}
+
+        {step === 1 ? (
+          <div className="space-y-4">
+            <div>
+              <label className={labelClass}>Brand</label>
+              <div className="flex items-center gap-3">
+                <BrandAvatar name={selectedBrand?.name || ''} logoUrl={selectedBrand?.logo_url} size="md" />
+                <select
+                  value={selectedBrandId}
+                  onChange={(e) => {
+                    setSelectedBrandId(e.target.value);
+                    setDashboardBrandId(e.target.value);
+                  }}
+                  className={inputClass}
+                >
+                  {brands.map((b) => (
+                    <option key={b.id} value={String(b.id)}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+                          </div>
+                        </div>
+                          <div>
+              <label className={labelClass}>Campaign name</label>
+              <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} />
+                          </div>
+                          <div>
+              <label className={labelClass}>Campaign brief</label>
+              <textarea rows={4} className={inputClass} value={brief} onChange={(e) => setBrief(e.target.value)} />
+                          </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                          <div>
+                <label className={labelClass}>Start date</label>
+                <input type="date" className={inputClass} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+                          </div>
+                          <div>
+                <label className={labelClass}>End date</label>
+                <input type="date" className={inputClass} value={endDate} min={startDate} onChange={(e) => setEndDate(e.target.value)} />
+                          </div>
+                      </div>
+            <div>
+              <label className={labelClass}>Number of posts</label>
+              <input
+                type="number"
+                min={1}
+                max={5}
+                className={inputClass}
+                value={postCount}
+                onChange={(e) => setPostCount(Math.min(5, Math.max(1, Number(e.target.value) || 1)))}
+              />
+                    </div>
+            <div>
+              <label className={labelClass}>Platforms</label>
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+                {allPlatforms.map((platform) => {
+                  const Icon = platform.Icon;
+                  const selected = platforms.includes(platform.id);
+                  return (
+                <button
+                      key={platform.id}
+                  type="button"
+                      disabled={!platform.implemented}
+                      onClick={() => togglePlatform(platform.id)}
+                      title={platform.implemented ? platform.name : `${platform.name} — coming soon`}
+                      className={[
+                        'relative flex flex-col items-center justify-center rounded-xl border p-3 shadow-sm transition-colors',
+                        !platform.implemented
+                          ? 'cursor-not-allowed border-gray-100 bg-gray-50 opacity-45'
+                          : selected
+                            ? 'border-blue-500 bg-blue-50/90 ring-2 ring-blue-500/20'
+                            : 'border-gray-200 bg-white hover:border-blue-200',
+                      ].join(' ')}
+                    >
+                      <Icon className={`h-6 w-6 ${platform.implemented ? 'text-gray-800' : 'text-gray-400'}`} aria-hidden />
+                      <span className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                        {platform.implemented ? platform.name.replace(' (Twitter)', '') : 'Soon'}
+                      </span>
+                </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="flex items-center justify-between">
+              <div />
+              <button
+                type="button"
+                disabled={saving || !step1Valid}
+                onClick={handleStep1Next}
+                className="rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                {saving ? 'Processing…' : 'Next'}
               </button>
-            ))}
           </div>
         </div>
-        {step === 1 && renderStep1()}
-        {step === 2 && renderStep2()}
+        ) : null}
+
+        {step === 2 ? (
+          <div className="space-y-4">
+            <div className="flex justify-end">
+          <button
+            type="button"
+                onClick={() => setEditingStep2((v) => !v)}
+                className="text-sm font-semibold text-blue-600 hover:text-blue-800"
+          >
+                {editingStep2 ? 'Done' : 'Edit details'}
+          </button>
+        </div>
+            <div>
+              <label className={labelClass}>Objective</label>
+              {editingStep2 ? (
+                <input
+                  className={inputClass}
+                  value={analysis.objective}
+                  onChange={(e) => setAnalysis((a) => ({ ...a, objective: e.target.value }))}
+                />
+              ) : (
+                <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-700">
+                  {analysis.objective || '—'}
+      </div>
+              )}
+    </div>
+      <div>
+              <label className={labelClass}>Target Audience</label>
+              {editingStep2 ? (
+                <textarea
+                  rows={3}
+                  className={inputClass}
+                  value={analysis.targetAudience}
+                  onChange={(e) => setAnalysis((a) => ({ ...a, targetAudience: e.target.value }))}
+                />
+              ) : (
+                <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-700 whitespace-pre-wrap">
+                  {analysis.targetAudience || '—'}
+      </div>
+              )}
+      </div>
+            <div>
+              <label className={labelClass}>Content Tone</label>
+              {editingStep2 ? (
+                <input
+                  className={inputClass}
+                  value={analysis.contentTone}
+                  onChange={(e) => setAnalysis((a) => ({ ...a, contentTone: e.target.value }))}
+                />
+              ) : (
+                <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-700">
+                  {analysis.contentTone || '—'}
+        </div>
+              )}
+      </div>
+      <div>
+              <label className={labelClass}>Platform Insights</label>
+              <div className="rounded-xl border border-gray-200 bg-white p-4">
+                {Object.keys(analysis.platformInsights || {}).length === 0 ? (
+                  <p className="text-sm text-gray-500">No platform insights generated yet.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {Object.entries(analysis.platformInsights || {}).map(([key, value]) => (
+                      <div key={key} className="grid gap-2 sm:grid-cols-3">
+                        <p className="text-sm font-medium text-gray-700 sm:col-span-1">
+                          {formatInsightKey(key)}
+                        </p>
+                        {editingStep2 ? (
+                          <div className="sm:col-span-2 flex items-start gap-2">
+                            <textarea
+                              rows={2}
+                              className={`${inputClass} flex-1`}
+                              value={String(value ?? '')}
+                              onChange={(e) => updateInsightValue(key, e.target.value)}
+                            />
+        <button
+          type="button"
+                              onClick={() => deleteInsightKey(key)}
+                              className="mt-1 inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-200 bg-white text-red-600 hover:bg-red-50"
+                              title="Delete insight"
+        >
+                              <FaTrash className="h-4 w-4" aria-hidden />
+        </button>
+                          </div>
+                        ) : (
+                          <p className="text-sm text-gray-700 sm:col-span-2 whitespace-pre-wrap">
+                            {String(value ?? '')}
+                          </p>
+                        )}
+      </div>
+                    ))}
+              </div>
+                )}
+                  </div>
+                </div>
+            <div className="space-y-2">
+              <label className={labelClass}>Schedule Plan</label>
+              <div className="rounded-xl border border-gray-200 bg-white p-4">
+                {(analysis.schedulePlan || []).length === 0 ? (
+                  <p className="text-sm text-gray-500">No schedule entries generated yet.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {(analysis.schedulePlan || []).map((s, idx) => (
+                      <div key={`${s.seq}-${idx}`} className="rounded-lg border border-gray-200 p-3">
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <p className="text-sm font-semibold text-gray-900">Post {s.seq}</p>
+                          <div className="flex items-center gap-1">
+                            {(s.platforms || []).map((pidRaw, iconIdx) => {
+                              const pid = String(pidRaw || '').toLowerCase();
+                              const Icon = platformIconMap[pid];
+                              if (!Icon) return null;
+                              return <Icon key={`${pid}-${iconIdx}`} className="h-4 w-4 text-gray-700" aria-hidden />;
+                            })}
+              </div>
+            </div>
+                        {editingStep2 ? (
+                          <div className="grid gap-2 sm:grid-cols-2">
+                  <input
+                              type="datetime-local"
+                              className={inputClass}
+                              value={isoToDateTimeLocal(s.scheduledAt)}
+                              onChange={(e) =>
+                                setAnalysis((a) => ({
+                                  ...a,
+                                  schedulePlan: a.schedulePlan.map((x, i) =>
+                                    i === idx ? { ...x, scheduledAt: localToIso(e.target.value) } : x
+                                  ),
+                                }))
+                              }
+                            />
+                    <input
+                              className={inputClass}
+                              value={s.focus || ''}
+                              onChange={(e) =>
+                                setAnalysis((a) => ({
+                                  ...a,
+                                  schedulePlan: a.schedulePlan.map((x, i) =>
+                                    i === idx ? { ...x, focus: e.target.value } : x
+                                  ),
+                                }))
+                              }
+                    />
+                  </div>
+                        ) : (
+                          <div className="space-y-1 text-sm text-gray-700">
+                            <p>
+                              <span className="font-medium text-gray-800">When: </span>
+                              {s.scheduledAt
+                                ? (() => {
+                                    try {
+                                      return format(new Date(s.scheduledAt), 'MMM d, yyyy h:mm a');
+                                    } catch {
+                                      return s.scheduledAt;
+                                    }
+                                  })()
+                                : '—'}
+                            </p>
+                            <p>
+                              <span className="font-medium text-gray-800">Focus: </span>
+                              {s.focus || '—'}
+                            </p>
+                  </div>
+                        )}
+                </div>
+                    ))}
+                </div>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center justify-between">
+          <button
+            type="button"
+                onClick={() => setStep(1)}
+                disabled={editingStep2}
+                className="rounded-lg border border-gray-300 bg-white px-6 py-2.5 text-sm font-semibold text-gray-800 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Back
+          </button>
+            <button
+              type="button"
+                onClick={handleStep2Next}
+                disabled={generating || editingStep2}
+                className="rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                {generating ? 'Processing…' : 'Next'}
+            </button>
+          </div>
+        </div>
+        ) : null}
+
+        {step === 3 ? (
+          <div className="space-y-4">
+            {(posts || []).map((p) => (
+              <div key={p.id} className="space-y-3 rounded-xl border border-gray-200 p-4">
+                <p className="text-sm font-medium text-gray-900">
+                  Post {p.scheduleSeq} ·{' '}
+                  {(() => {
+                    const pid = String(p.platform || '').toLowerCase();
+                    const Icon = platformIconMap[pid];
+                    return Icon ? <Icon className="inline h-4 w-4 align-text-bottom text-gray-700" aria-hidden /> : pid || '—';
+                  })()}{' '}
+                  ·{' '}
+                  {p.scheduledAt ? format(new Date(p.scheduledAt), 'MMM d, yyyy h:mm a') : '—'}
+                </p>
+                {(() => {
+                  const imageUrl = p.media?.imageUrl || p.media?.image_url || null;
+                  const imagePrompt = p.media?.imagePrompt || p.media?.image_prompt || '';
+                  if (!imageUrl) return null;
+  return (
+                    <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+                      <img src={imageUrl} alt={imagePrompt || 'Generated campaign media'} className="h-auto w-full object-cover" />
+      </div>
+                  );
+                })()}
+                <textarea
+                  rows={4}
+                  className={inputClass}
+                  value={p.caption || ''}
+                  onChange={(e) =>
+                    setPosts((curr) => curr.map((x) => (x.id === p.id ? { ...x, caption: e.target.value } : x)))
+                  }
+                />
+                <div className="flex flex-wrap gap-2">
+                  {(p.hashtags || []).map((tag) => {
+                    const selected = (p.selectedHashtags || []).includes(tag);
+                    return (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => toggleSelectedHashtag(p.id, tag)}
+                        className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                          selected ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-700'
+                        }`}
+                      >
+                        {tag}
+                      </button>
+                    );
+                  })}
+              </div>
+                <p className="text-xs text-gray-500">Selected {(p.selectedHashtags || []).length}/5 hashtags</p>
+            </div>
+          ))}
+            <div className="flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => setStep(2)}
+                className="rounded-lg border border-gray-300 bg-white px-6 py-2.5 text-sm font-semibold text-gray-800 shadow-sm hover:bg-gray-50"
+              >
+                Back
+              </button>
+              <button
+                type="button"
+                onClick={savePostEdits}
+                disabled={saving}
+                className="rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                {saving ? 'Saving…' : 'Save and finish'}
+              </button>
+        </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );

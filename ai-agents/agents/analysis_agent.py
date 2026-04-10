@@ -6,14 +6,22 @@ from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 from typing import List, Optional
 import json
+from datetime import datetime, timedelta, timezone
 
 # Output schema for Analysis Agent
+class SchedulePlanItem(BaseModel):
+    seq: int = Field(description="1-based sequence number of post")
+    scheduled_at: str = Field(description="ISO date-time string in UTC")
+    focus: str = Field(description="What this post should focus on")
+    platforms: List[str] = Field(description="Platforms for this post")
+
+
 class AnalysisOutput(BaseModel):
+    objective: str = Field(description="Campaign objective inferred from brief and goals")
     target_audience: str = Field(description="Description of the target audience demographics")
-    engagement_times: List[str] = Field(description="Optimal posting times in HH:MM format")
     content_tone: str = Field(description="Recommended tone for content")
-    recommended_post_frequency: int = Field(description="Number of posts per week")
     platform_insights: Optional[dict] = Field(default={}, description="Additional Instagram-specific insights")
+    schedule_plan: List[SchedulePlanItem] = Field(default_factory=list, description="Planned posting schedule")
 
 class AnalysisAgentConfig:
     """Configuration and creation of the Analysis Agent"""
@@ -47,8 +55,18 @@ class AnalysisAgentConfig:
         )
     
     @staticmethod
-    def create_task(agent: Agent, business_type: str, location: Optional[str], 
-                   campaign_goals: str) -> Task:
+    def create_task(
+        agent: Agent,
+        business_type: str,
+        location: Optional[str],
+        campaign_goals: str,
+        campaign_name: str,
+        campaign_brief: str,
+        post_count: int,
+        start_date: datetime,
+        end_date: datetime,
+        platforms: List[str],
+    ) -> Task:
         """
         Creates the analysis task with specific inputs
         
@@ -64,16 +82,27 @@ class AnalysisAgentConfig:
         location_info = f"located in {location}" if location else "with general regional appeal"
         
         task_description = f"""
-        Analyze the target audience and engagement strategy for a {business_type} {location_info}.
+        Analyze a campaign strategy for a {business_type} {location_info}.
         
+        Campaign Name: {campaign_name}
         Campaign Goals: {campaign_goals}
+        Campaign Brief: {campaign_brief}
+        Start Date: {start_date.isoformat()}
+        End Date: {end_date.isoformat()}
+        Number of Posts: {post_count}
+        Platforms: {', '.join(platforms)}
         
         Provide a comprehensive analysis including:
-        1. Target Audience: Define the primary demographic (age range, interests, lifestyle)
-        2. Engagement Times: Identify 3-5 optimal posting times based on when food content performs best
-        3. Content Tone: Recommend the tone and style (e.g., casual, professional, playful, inspiring)
-        4. Post Frequency: Suggest how many posts per week for optimal engagement without oversaturation
-        5. Platform Insights: Any Instagram-specific recommendations (Stories, Reels, carousel posts)
+        1. Objective: single concise objective statement
+        2. Target Audience: primary demographic (age range, interests, lifestyle)
+        3. Content Tone: tone and style (e.g., casual, professional, playful, inspiring)
+        4. Platform Insights: platform-specific recommendations
+        5. Schedule Plan: exactly {post_count} entries distributed between start/end dates,
+           each with:
+           - seq (1-based incremental)
+           - scheduled_at (ISO datetime)
+           - focus (unique angle for that post)
+           - platforms (array; for now usually all selected platforms)
         
         Consider:
         - Instagram's algorithm favors consistent posting and high engagement
@@ -83,15 +112,22 @@ class AnalysisAgentConfig:
         
         Format your response as a structured JSON that matches this schema:
         {{
+            "objective": "one concise objective",
             "target_audience": "description of audience",
-            "engagement_times": ["HH:MM", "HH:MM", ...],
             "content_tone": "recommended tone",
-            "recommended_post_frequency": number,
             "platform_insights": {{
                 "story_frequency": "recommendation",
                 "reel_priority": "high/medium/low",
                 "carousel_usage": "recommendation"
-            }}
+            }},
+            "schedule_plan": [
+                {{
+                    "seq": 1,
+                    "scheduled_at": "2026-01-15T18:00:00Z",
+                    "focus": "hook/focus for this post",
+                    "platforms": ["instagram"]
+                }}
+            ]
         }}
         """
         
@@ -99,11 +135,11 @@ class AnalysisAgentConfig:
             description=task_description,
             agent=agent,
             expected_output="""A JSON object containing:
+            - objective: string objective statement
             - target_audience: string describing demographics
-            - engagement_times: array of time strings in HH:MM format
             - content_tone: string describing recommended tone
-            - recommended_post_frequency: integer (posts per week)
-            - platform_insights: object with Instagram-specific recommendations"""
+            - platform_insights: object with platform recommendations
+            - schedule_plan: array of schedule entries with seq, scheduled_at, focus, platforms"""
         )
 
 # Utility function to parse agent output
@@ -129,19 +165,61 @@ def parse_analysis_output(raw_output: str) -> AnalysisOutput:
         else:
             # Fallback: create a default output
             return AnalysisOutput(
+                objective="Increase campaign performance with focused content and timing",
                 target_audience="General food enthusiasts",
-                engagement_times=["08:00", "12:00", "17:00", "20:00"],
                 content_tone="warm and inviting",
-                recommended_post_frequency=5
+                platform_insights={},
+                schedule_plan=[]
             )
     except Exception as e:
         print(f"Error parsing analysis output: {e}")
         raise
 
 # Example usage function
-def run_analysis_agent(business_type: str, location: Optional[str] = None, 
-                       campaign_goals: str = "Increase brand awareness and engagement",
-                       api_key: Optional[str] = None) -> AnalysisOutput:
+def _fallback_schedule_plan(
+    post_count: int,
+    start_date: datetime,
+    end_date: datetime,
+    platforms: List[str],
+) -> List[SchedulePlanItem]:
+    if post_count < 1:
+        return []
+    if end_date < start_date:
+        end_date = start_date
+    if start_date.tzinfo is None:
+        start_date = start_date.replace(tzinfo=timezone.utc)
+    if end_date.tzinfo is None:
+        end_date = end_date.replace(tzinfo=timezone.utc)
+
+    if post_count == 1:
+        slots = [start_date + timedelta(hours=18)]
+    else:
+        total_seconds = max((end_date - start_date).total_seconds(), 1)
+        step = total_seconds / (post_count - 1)
+        slots = [start_date + timedelta(seconds=step * i, hours=18) for i in range(post_count)]
+    return [
+        SchedulePlanItem(
+            seq=i + 1,
+            scheduled_at=slots[i].isoformat().replace("+00:00", "Z"),
+            focus=f"Post {i+1}: highlight a different campaign angle",
+            platforms=platforms or ["instagram"],
+        )
+        for i in range(post_count)
+    ]
+
+
+def run_analysis_agent(
+    business_type: str,
+    location: Optional[str] = None,
+    campaign_goals: str = "Increase brand awareness and engagement",
+    campaign_name: str = "Campaign",
+    campaign_brief: str = "",
+    post_count: int = 1,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+    platforms: Optional[List[str]] = None,
+    api_key: Optional[str] = None,
+) -> AnalysisOutput:
     """
     Run the Analysis Agent with given parameters
     
@@ -168,7 +246,22 @@ def run_analysis_agent(business_type: str, location: Optional[str] = None,
     
     # Create agent and task
     agent = AnalysisAgentConfig.create_agent(llm)
-    task = AnalysisAgentConfig.create_task(agent, business_type, location, campaign_goals)
+    start = start_date or datetime.now(timezone.utc)
+    end = end_date or start
+    selected_platforms = platforms or ["instagram"]
+
+    task = AnalysisAgentConfig.create_task(
+        agent,
+        business_type,
+        location,
+        campaign_goals,
+        campaign_name,
+        campaign_brief,
+        post_count,
+        start,
+        end,
+        selected_platforms,
+    )
     
     # Create crew and execute
     crew = Crew(
@@ -180,7 +273,10 @@ def run_analysis_agent(business_type: str, location: Optional[str] = None,
     result = crew.kickoff()
     
     # Parse and return structured output
-    return parse_analysis_output(str(result))
+    parsed = parse_analysis_output(str(result))
+    if not parsed.schedule_plan:
+        parsed.schedule_plan = _fallback_schedule_plan(post_count, start, end, selected_platforms)
+    return parsed
 
 if __name__ == "__main__":
     # Test the agent

@@ -20,3 +20,5 @@ async def ensure_indexes():
     db = get_db()
     await db.campaigns.create_index([("brand", 1), ("createdAt", -1)])
     await db.campaigns.create_index([("brand", 1), ("_id", 1)])
+    await db.posts.create_index([("campaign", 1), ("scheduleSeq", 1), ("platform", 1)], unique=True)
+    await db.posts.create_index([("brand", 1), ("campaign", 1), ("createdAt", -1)])

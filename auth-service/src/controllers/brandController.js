@@ -1,8 +1,11 @@
+const fs = require('fs').promises;
+const path = require('path');
 const mongoose = require('mongoose');
 const Brand = require('../models/Brand');
 const BrandMember = require('../models/BrandMember');
 const User = require('../models/User');
 const { createError } = require('../utils/error');
+const { UPLOAD_DIR } = require('../middleware/brandLogoUpload');
 
 async function getMembership(userId, brandId) {
   return BrandMember.findOne({
@@ -51,6 +54,7 @@ exports.listMyBrands = async (req, res, next) => {
         country: m.brand.country,
         businessType: m.brand.businessType || '',
         description: m.brand.description,
+        logo_url: m.brand.logo_url || '',
         role: m.role,
         createdAt: m.brand.createdAt,
         updatedAt: m.brand.updatedAt,
@@ -98,8 +102,42 @@ exports.createBrand = async (req, res, next) => {
         country: brand.country,
         businessType: brand.businessType,
         description: brand.description,
+        logo_url: brand.logo_url || '',
         role: 'admin',
         createdAt: brand.createdAt,
+        updatedAt: brand.updatedAt,
+      },
+    });
+  } catch (e) {
+    next(e);
+  }
+};
+
+// @route   POST /api/brands/:brandId/logo
+exports.uploadBrandLogo = async (req, res, next) => {
+  try {
+    const { brand } = await assertAdmin(req, req.params.brandId);
+    if (!req.file) {
+      return next(createError(400, 'Logo image is required (form field name: logo)'));
+    }
+    const brandId = req.params.brandId;
+    const files = await fs.readdir(UPLOAD_DIR).catch(() => []);
+    for (const f of files) {
+      if (f === req.file.filename) continue;
+      const dot = f.lastIndexOf('.');
+      const stem = dot === -1 ? f : f.slice(0, dot);
+      if (stem === brandId) {
+        await fs.unlink(path.join(UPLOAD_DIR, f)).catch(() => {});
+      }
+    }
+    const publicPath = `/uploads/brand-logos/${req.file.filename}`;
+    brand.logo_url = publicPath;
+    await brand.save();
+    res.json({
+      success: true,
+      brand: {
+        id: brand._id,
+        logo_url: brand.logo_url,
         updatedAt: brand.updatedAt,
       },
     });
@@ -138,6 +176,7 @@ exports.getBrand = async (req, res, next) => {
         country: brand.country,
         businessType: brand.businessType || '',
         description: brand.description,
+        logo_url: brand.logo_url || '',
         createdAt: brand.createdAt,
         updatedAt: brand.updatedAt,
       },
@@ -183,6 +222,7 @@ exports.updateBrand = async (req, res, next) => {
         country: brand.country,
         businessType: brand.businessType || '',
         description: brand.description,
+        logo_url: brand.logo_url || '',
         updatedAt: brand.updatedAt,
       },
     });

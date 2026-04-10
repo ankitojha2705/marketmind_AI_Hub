@@ -1,4 +1,5 @@
 require('dotenv').config();
+const path = require('path');
 const passport = require('passport');
 require('./config/passport');
 const express = require('express');
@@ -20,6 +21,8 @@ connectDB();
 
 // Init Middleware
 app.use(express.json({ extended: false }));
+// Public brand logos (same origin as API; path stored in brand.logo_url for S3 migration later)
+app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 // Passport middleware
 
 app.use(passport.initialize());

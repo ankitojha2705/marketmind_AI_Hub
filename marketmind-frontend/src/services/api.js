@@ -83,7 +83,7 @@ export const fetchMyBrands = async () => {
   return data;
 };
 
-/** @param {{ name: string, city: string, country: string, description?: string }} payload */
+/** @param {{ name: string, city: string, country: string, businessType: string, description?: string }} payload */
 export const createBrand = async (payload) => {
   const { data } = await api.post('/brands', payload);
   return data;
@@ -95,7 +95,7 @@ export const fetchBrand = async (brandId) => {
   return data;
 };
 
-/** @param {string} brandId @param {{ name?: string, city?: string, country?: string, description?: string }} payload */
+/** @param {string} brandId @param {{ name?: string, city?: string, country?: string, businessType: string, description?: string }} payload */
 export const updateBrand = async (brandId, payload) => {
   const { data } = await api.patch(`/brands/${brandId}`, payload);
   return data;

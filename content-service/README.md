@@ -1,12 +1,12 @@
 # MarketMind Content Service
 
-FastAPI service for **campaigns** (and future post/content APIs). Uses the **same MongoDB** as Auth Service (`marketmind` database) but keeps domain logic separate.
+FastAPI service for **campaigns** (and future post/content APIs). Uses the **same MongoDB** as **auth-service** (`marketmind` database) but keeps domain logic separate.
 
 ## Requirements
 
 - Python 3.11+
 - MongoDB URI with database name in the path (e.g. `.../marketmind?...`)
-- **`JWT_SECRET` must match** `Auth_Service` so `Authorization: Bearer <token>` from the frontend validates here.
+- **`JWT_SECRET` must match** **auth-service** so `Authorization: Bearer <token>` from the frontend validates here.
 
 ## Setup
 
@@ -18,7 +18,7 @@ pip install -r requirements.txt
 copy .env.example .env   # then edit .env
 ```
 
-Set `MONGODB_URI` and `JWT_SECRET` (same values as Auth Service).
+Set `MONGODB_URI` and `JWT_SECRET` (same values as **auth-service**).
 
 ## Run
 
@@ -52,4 +52,4 @@ Membership is checked against the **`brandmembers`** collection (same as Mongoos
 
 ## Frontend
 
-Point the app at this service with an env var such as `VITE_CONTENT_API_URL=http://localhost:8002` and send the same JWT as for Auth.
+Point the app at this service with an env var such as `VITE_CONTENT_API_URL=http://localhost:8002` and send the same JWT as for **auth-service**.

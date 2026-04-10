@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import ReactCalendar from 'react-calendar';
 import { format } from 'date-fns';
+import { Camera, X } from 'lucide-react';
 import { toast } from 'sonner';
 import BrandAvatar from '../components/BrandAvatar';
 import { fetchBrandCampaigns, fetchBrandPosts, fetchMyBrands } from '../services/api';
@@ -23,6 +24,7 @@ export default function CalendarPage() {
   const [loading, setLoading] = useState(true);
   const [dayMap, setDayMap] = useState({});
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const [imagePreview, setImagePreview] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -160,8 +162,43 @@ export default function CalendarPage() {
                     </p>
                   </div>
                   <p className="mt-2 line-clamp-2 text-sm text-gray-700">{p.caption || 'No caption'}</p>
+                  {(() => {
+                    const imageUrl = p.media?.imageUrl || p.media?.image_url || null;
+                    const imagePrompt = p.media?.imagePrompt || p.media?.image_prompt || '';
+                    if (!imageUrl) return null;
+                    return (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setImagePreview({
+                            src: imageUrl,
+                            alt: imagePrompt || 'Post media',
+                          })
+                        }
+                        className="mt-2 inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-800 shadow-sm hover:bg-gray-50"
+                      >
+                        <Camera className="h-4 w-4" aria-hidden />
+                        View image
+                      </button>
+                    );
+                  })()}
                 </div>
               ))}
+          </div>
+        </div>
+      ) : null}
+      {imagePreview ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="relative w-full max-w-5xl rounded-xl bg-white p-3 shadow-xl">
+            <button
+              type="button"
+              onClick={() => setImagePreview(null)}
+              className="absolute right-3 top-3 inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+              aria-label="Close image preview"
+            >
+              <X className="h-4 w-4" aria-hidden />
+            </button>
+            <img src={imagePreview.src} alt={imagePreview.alt} className="max-h-[80vh] w-full rounded-lg object-contain" />
           </div>
         </div>
       ) : null}

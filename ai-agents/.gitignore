@@ -57,3 +57,6 @@ Thumbs.db
 # Local scratch / secrets (optional naming)
 secrets.txt
 *.local
+
+# Generated assets
+generated-images/

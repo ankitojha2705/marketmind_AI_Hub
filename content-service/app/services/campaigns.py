@@ -6,7 +6,7 @@ from bson.errors import InvalidId
 from fastapi import HTTPException
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-from app.schemas.campaign import Audience, CampaignCreate, CampaignOut, CampaignUpdate
+from app.schemas.campaign import Audience, CampaignCreate, CampaignOut, CampaignUpdate, SchedulePlanItem
 
 POST_COUNT_MAX = 5
 
@@ -23,7 +23,20 @@ _STATUS_TRANSITIONS: dict[str, frozenset[str]] = {
 }
 
 _CONTENT_FIELDS = frozenset(
-    {"name", "brief", "platforms", "objective", "startDate", "endDate", "audience", "postCount"}
+    {
+        "name",
+        "brief",
+        "platforms",
+        "objective",
+        "startDate",
+        "endDate",
+        "audience",
+        "postCount",
+        "targetAudience",
+        "contentTone",
+        "platformInsights",
+        "schedulePlan",
+    }
 )
 
 
@@ -43,6 +56,18 @@ def _audience_to_doc(a: Audience) -> dict[str, Any]:
         "ageMin": a.ageMin,
         "ageMax": a.ageMax,
     }
+
+
+def _schedule_to_doc(items: list[SchedulePlanItem]) -> list[dict[str, Any]]:
+    return [
+        {
+            "seq": item.seq,
+            "scheduledAt": item.scheduledAt,
+            "focus": item.focus.strip(),
+            "platforms": list(item.platforms),
+        }
+        for item in items
+    ]
 
 
 def _doc_to_campaign_out(doc: dict) -> CampaignOut:
@@ -65,6 +90,10 @@ def _doc_to_campaign_out(doc: dict) -> CampaignOut:
             "ageMax": aud.get("ageMax", 65),
         },
         postCount=post_count,
+        targetAudience=doc.get("targetAudience") or "",
+        contentTone=doc.get("contentTone") or "",
+        platformInsights=doc.get("platformInsights") or {},
+        schedulePlan=list(doc.get("schedulePlan") or []),
         createdAt=doc["createdAt"],
         updatedAt=doc["updatedAt"],
     )
@@ -84,11 +113,15 @@ async def create_campaign(
         "brief": body.brief.strip(),
         "platforms": body.platforms,
         "status": _norm_status(body.status),
-        "objective": body.objective.strip(),
+        "objective": (body.objective or "").strip(),
         "startDate": body.startDate,
         "endDate": body.endDate,
         "audience": _audience_to_doc(body.audience),
         "postCount": body.postCount,
+        "targetAudience": (body.targetAudience or "").strip(),
+        "contentTone": (body.contentTone or "").strip(),
+        "platformInsights": body.platformInsights or {},
+        "schedulePlan": _schedule_to_doc(body.schedulePlan),
         "createdAt": now,
         "updatedAt": now,
     }
@@ -211,6 +244,14 @@ async def update_campaign(
         update["audience"] = _audience_to_doc(body.audience)
     if body.postCount is not None:
         update["postCount"] = body.postCount
+    if body.targetAudience is not None:
+        update["targetAudience"] = body.targetAudience.strip()
+    if body.contentTone is not None:
+        update["contentTone"] = body.contentTone.strip()
+    if body.platformInsights is not None:
+        update["platformInsights"] = body.platformInsights
+    if body.schedulePlan is not None:
+        update["schedulePlan"] = _schedule_to_doc(body.schedulePlan)
     if body.status is not None:
         update["status"] = new_status
 
@@ -218,6 +259,10 @@ async def update_campaign(
     end = update.get("endDate", existing.get("endDate"))
     if end < start:
         raise HTTPException(status_code=400, detail="endDate must be on or after startDate")
+    post_count = int(update.get("postCount", existing.get("postCount", 1)))
+    schedule_plan = update.get("schedulePlan", existing.get("schedulePlan", []))
+    if schedule_plan and len(schedule_plan) != post_count:
+        raise HTTPException(status_code=400, detail="schedulePlan length must equal postCount")
 
     await db.campaigns.update_one({"_id": cid, "brand": bid}, {"$set": update})
     doc = await db.campaigns.find_one({"_id": cid})

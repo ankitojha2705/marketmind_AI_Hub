@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.db import ensure_indexes, get_client
 from app.routers.campaigns import router as campaigns_router
+from app.routers.posts import router as posts_router
 
 
 @asynccontextmanager
@@ -32,6 +33,7 @@ app.add_middleware(
 )
 
 app.include_router(campaigns_router)
+app.include_router(posts_router)
 
 
 @app.get("/health")

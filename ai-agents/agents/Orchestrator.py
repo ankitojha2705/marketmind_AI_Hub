@@ -228,48 +228,63 @@ def create_final_instagram_post(analysis_data: dict, content_data: dict, seo_dat
         Dict with complete Instagram post ready to use
     """
     # Use SEO-optimized content if available, otherwise fall back to original
-    final_caption = seo_data.get('optimized_caption') if isinstance(seo_data, dict) and seo_data.get('optimized_caption') else content_data.get('caption', '')
-    final_hashtags = seo_data.get('optimized_hashtags') if isinstance(seo_data, dict) and seo_data.get('optimized_hashtags') else content_data.get('hashtags', [])
+    seo_first = {}
+    if isinstance(seo_data, dict):
+        posts = seo_data.get("posts") or []
+        if posts and isinstance(posts, list):
+            seo_first = (posts[0] or {}).get("optimized") or {}
+        else:
+            seo_first = seo_data
+    content_first = {}
+    if isinstance(content_data, dict):
+        posts = content_data.get("posts") or []
+        if posts and isinstance(posts, list):
+            content_first = posts[0] or {}
+        else:
+            content_first = content_data
+
+    final_caption = seo_first.get('optimized_caption') if seo_first.get('optimized_caption') else content_first.get('caption', '')
+    final_hashtags = seo_first.get('optimized_hashtags') if seo_first.get('optimized_hashtags') else content_first.get('hashtags', [])
     
     # Combine location tags from SEO with main hashtags
-    location_tags = seo_data.get('location_tags', []) if isinstance(seo_data, dict) else []
+    location_tags = seo_first.get('location_tags', []) if isinstance(seo_first, dict) else []
     all_hashtags = final_hashtags + location_tags
     
     # Build final post - everything needed for Instagram posting
     final_post = {
         # === NEW: Business Strategy Insights ===
-        "business_strength": seo_data.get('business_strength', '') if isinstance(seo_data, dict) else '',
-        "content_tone": seo_data.get('content_tone', '') if isinstance(seo_data, dict) else '',
-        "target_audience": seo_data.get('target_audience', '') if isinstance(seo_data, dict) else '',
-        "competitor_takeaway": seo_data.get('competitor_takeaway', '') if isinstance(seo_data, dict) else '',
+        "business_strength": seo_first.get('business_strength', '') if isinstance(seo_first, dict) else '',
+        "content_tone": seo_first.get('content_tone', '') if isinstance(seo_first, dict) else '',
+        "target_audience": seo_first.get('target_audience', '') if isinstance(seo_first, dict) else '',
+        "competitor_takeaway": seo_first.get('competitor_takeaway', '') if isinstance(seo_first, dict) else '',
         
         # Core Instagram post content
         "caption": final_caption,
         "hashtags": all_hashtags,
         "hashtag_string": ' '.join(all_hashtags),
-        "post_type": content_data.get('post_type', 'Photo'),
-        "call_to_action": content_data.get('call_to_action', ''),
+        "post_type": content_first.get('post_type', 'Photo'),
+        "call_to_action": content_first.get('call_to_action', ''),
         
         # Posting details
-        "suggested_post_time": content_data.get('suggested_post_time'),
-        "engagement_times": analysis_data.get('engagement_times', []) if isinstance(analysis_data, dict) else [],
+        "suggested_post_time": content_first.get('suggested_post_time'),
+        "engagement_times": [x.get("scheduled_at") for x in (analysis_data.get("schedule_plan") or []) if isinstance(x, dict)] if isinstance(analysis_data, dict) else [],
         
         # Media/Image information
-        "media_prompts": content_data.get('media_prompts', []),
-        "image_prompt": content_data.get('image_prompt') or (seo_data.get('alt_text_suggestion') if isinstance(seo_data, dict) else None),
-        "alt_text": seo_data.get('alt_text_suggestion') if isinstance(seo_data, dict) else None,
-        "image_url": content_data.get('image_url'),
+        "media_prompts": content_first.get('media_prompts', []),
+        "image_prompt": content_first.get('image_prompt') or (seo_first.get('alt_text_suggestion') if isinstance(seo_first, dict) else None),
+        "alt_text": seo_first.get('alt_text_suggestion') if isinstance(seo_first, dict) else None,
+        "image_url": content_first.get('image_url'),
         
         # SEO & Optimization
-        "keywords": seo_data.get('keyword_suggestions', []) if isinstance(seo_data, dict) else [],
-        "seo_score": seo_data.get('seo_score', 0) if isinstance(seo_data, dict) else 0,
-        "seo_improvements": seo_data.get('improvements', []) if isinstance(seo_data, dict) else [],
+        "keywords": seo_first.get('keyword_suggestions', []) if isinstance(seo_first, dict) else [],
+        "seo_score": seo_first.get('seo_score', 0) if isinstance(seo_first, dict) else 0,
+        "seo_improvements": seo_first.get('improvements', []) if isinstance(seo_first, dict) else [],
         
         # Analysis insights (for reference)
-        "post_frequency": analysis_data.get('recommended_post_frequency', 0) if isinstance(analysis_data, dict) else 0,
+        "post_frequency": len(analysis_data.get("schedule_plan") or []) if isinstance(analysis_data, dict) else 0,
         
         # Additional notes
-        "notes": content_data.get('notes', ''),
+        "notes": content_first.get('notes', ''),
     }
     
     return final_post
@@ -296,12 +311,12 @@ async def process_campaign_request(
         analysis_result = run_analysis_agent(
             business_type=business_type,
             location=location,
-            campaign_goals=campaign_goals
+            campaign_goals=campaign_goals,
         )
         
         logger.info(f"[{request_id}] ✓ Analysis completed!")
         logger.info(f"   Target Audience: {analysis_result.target_audience}")
-        logger.info(f"   Engagement Times: {', '.join(analysis_result.engagement_times)}")
+        logger.info(f"   Objective: {analysis_result.objective}")
         
         analysis_data = analysis_result.dict()
         
@@ -387,7 +402,7 @@ async def process_campaign_request(
     try:
         from seo_agent import run_seo_agent
         # Only run SEO if content generation was successful
-        if isinstance(content_data, dict) and "caption" in content_data:
+        if isinstance(content_data, dict) and content_data.get("posts"):
             seo_result = run_seo_agent(
                 business_type=business_type,
                 location=location,
@@ -396,12 +411,7 @@ async def process_campaign_request(
             )
             seo_data = seo_result.dict()
             logger.info(f"[{request_id}] ✓ SEO optimization completed!")
-            logger.info(f"   SEO Score: {seo_result.seo_score}/100")
-            logger.info(f"   Optimized Hashtags: {len(seo_result.optimized_hashtags)} tags")
-            # === NEW: Log business insights ===
-            logger.info(f"   Business Strength: {seo_result.business_strength[:50]}...")
-            logger.info(f"   Content Tone: {seo_result.content_tone}")
-            logger.info(f"   Target Audience: {seo_result.target_audience[:50]}...")
+            logger.info(f"   SEO results generated for %s post(s)", len(seo_data.get("posts") or []))
         else:
             logger.warning(f"[{request_id}] ⚠ Skipping SEO - content generation failed or incomplete")
             seo_data = {
@@ -424,6 +434,78 @@ async def process_campaign_request(
         }
     
     return analysis_data, competitor_data, content_data, seo_data
+
+
+async def run_step2_analysis(ctx: Context, campaign_payload: dict, request_id: str) -> dict:
+    from analysis_agent import run_analysis_agent
+
+    business_type = (
+        (campaign_payload.get("brand") or {}).get("businessType")
+        or campaign_payload.get("business_type")
+        or "business"
+    )
+    location = (
+        (campaign_payload.get("brand") or {}).get("location")
+        or campaign_payload.get("location")
+    )
+    campaign = campaign_payload.get("campaign") or {}
+    analysis_result = run_analysis_agent(
+        business_type=business_type,
+        location=location,
+        campaign_goals=campaign.get("brief") or campaign_payload.get("campaign_goals") or "",
+        campaign_name=campaign.get("name") or "Campaign",
+        campaign_brief=campaign.get("brief") or "",
+        post_count=int(campaign.get("postCount", 1)),
+        start_date=datetime.fromisoformat(campaign.get("startDate").replace("Z", "+00:00")) if campaign.get("startDate") else None,
+        end_date=datetime.fromisoformat(campaign.get("endDate").replace("Z", "+00:00")) if campaign.get("endDate") else None,
+        platforms=campaign.get("platforms") or ["instagram"],
+    )
+    return analysis_result.dict()
+
+
+async def run_step3_generation(ctx: Context, campaign_payload: dict, request_id: str) -> dict:
+    from Competitor_Agent import run_competitor_agent
+    from content_generation import run_content_agent
+    from seo_agent import run_seo_agent
+
+    business_type = (
+        (campaign_payload.get("brand") or {}).get("businessType")
+        or campaign_payload.get("business_type")
+        or "business"
+    )
+    location = (
+        (campaign_payload.get("brand") or {}).get("location")
+        or campaign_payload.get("location")
+    )
+    campaign = campaign_payload.get("campaign") or {}
+    analysis_data = campaign_payload.get("analysis") or {}
+
+    competitor_result = run_competitor_agent(
+        business_type=business_type,
+        location=location or "United States",
+    )
+    competitor_data = competitor_result.dict()
+
+    content_result = run_content_agent(
+        business_type=business_type,
+        campaign_goals=campaign.get("brief") or campaign_payload.get("campaign_goals") or "",
+        analysis_data=analysis_data,
+        competitor_data=competitor_data,
+    )
+    content_data = content_result.dict()
+
+    seo_result = run_seo_agent(
+        business_type=business_type,
+        location=location,
+        content_data=content_data,
+        campaign_goals=campaign.get("brief") or campaign_payload.get("campaign_goals") or "",
+    )
+    seo_data = seo_result.dict()
+    return {
+        "competitor": competitor_data,
+        "content": content_data,
+        "seo": seo_data,
+    }
 
 # ============================================================================
 # ASI1 Chat Protocol Setup

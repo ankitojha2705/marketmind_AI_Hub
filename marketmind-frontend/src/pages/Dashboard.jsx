@@ -6,15 +6,21 @@ import {
   Building2,
   Calendar,
   MapPin,
+  Megaphone,
   PieChart,
-  Plus,
-  Pencil,
-  Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { getState, subscribe, scheduleDraft, deleteCampaign } from '../store/db';
-import { fetchMyBrands } from '../services/api';
+import { getState, subscribe, scheduleDraft } from '../store/db';
+import { fetchMyBrands, fetchBrandCampaigns } from '../services/api';
 import { getDashboardBrandId, setDashboardBrandId } from '../utils/dashboardBrandStorage';
+import { PlatformIconRow } from '../components/PlatformIcon';
+import {
+  campaignStatusBadgeClass,
+  formatCampaignStatus,
+  campaignCardPreviewClass,
+  campaignCardIconWrapClass,
+  campaignPlatformLabelClass,
+} from '../utils/campaignDisplay';
 
 const shellCard =
   'rounded-2xl border border-gray-200 bg-[hsl(0,0%,99.5%)] shadow-sm';
@@ -116,50 +122,13 @@ const formatTimeLeft = (dateString) => {
   }
 };
 
-// Get platform info
-const getPlatformInfo = (platform) => {
-  const platforms = {
-    facebook: {
-      name: 'Facebook',
-      color: 'bg-blue-100 text-blue-800',
-      icon: 'FB',
-      bgColor: 'bg-blue-100 text-blue-800'
-    },
-    instagram: {
-      name: 'Instagram',
-      color: 'bg-pink-100 text-pink-800',
-      icon: 'IG',
-      bgColor: 'bg-pink-100 text-pink-800'
-    },
-    twitter: {
-      name: 'Twitter',
-      color: 'bg-blue-100 text-blue-400',
-      icon: 'TW',
-      bgColor: 'bg-blue-100 text-blue-400'
-    },
-    linkedin: {
-      name: 'LinkedIn',
-      color: 'bg-blue-50 text-blue-700',
-      icon: 'IN',
-      bgColor: 'bg-blue-50 text-blue-700'
-    },
-    default: {
-      name: 'Other',
-      color: 'bg-gray-100 text-gray-800',
-      icon: 'OT',
-      bgColor: 'bg-gray-100 text-gray-800'
-    }
-  };
-
-  return platforms[platform?.toLowerCase()] || platforms.default;
-};
-
 // Main Dashboard Component
 const Dashboard = () => {
   const navigate = useNavigate();
 
   // State for campaigns, drafts, and scheduled posts
-  const [campaigns, setCampaigns] = useState([]);
+  const [apiCampaigns, setApiCampaigns] = useState([]);
+  const [apiCampaignsLoading, setApiCampaignsLoading] = useState(false);
   const [drafts, setDrafts] = useState([]);
   const [scheduled, setScheduled] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -209,14 +178,40 @@ const Dashboard = () => {
     setDashboardBrandId(next);
   };
 
-  // Load data from database
+  useEffect(() => {
+    if (!selectedBrandId) {
+      setApiCampaigns([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setApiCampaignsLoading(true);
+      try {
+        const list = await fetchBrandCampaigns(selectedBrandId);
+        if (!cancelled) setApiCampaigns(Array.isArray(list) ? list : []);
+      } catch (e) {
+        if (!cancelled) {
+          toast.error(
+            e.response?.data?.detail || e.response?.data?.error || e.message || 'Could not load campaigns'
+          );
+          setApiCampaigns([]);
+        }
+      } finally {
+        if (!cancelled) setApiCampaignsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedBrandId]);
+
+  // Local drafts / scheduled posts (IndexedDB); campaigns list comes from content API
   useEffect(() => {
     const loadData = () => {
       try {
         const state = getState();
-        setCampaigns(state.campaigns || []);
         setDrafts(state.drafts || []);
-        setScheduled(state.drafts?.filter(d => d.status === 'scheduled') || []);
+        setScheduled(state.drafts?.filter((d) => d.status === 'scheduled') || []);
       } catch (error) {
         console.error('Error loading data:', error);
       } finally {
@@ -231,8 +226,18 @@ const Dashboard = () => {
 
   const filteredCampaigns = useMemo(() => {
     if (!selectedBrandId) return [];
-    return campaigns.filter((c) => c.brandId === selectedBrandId);
-  }, [campaigns, selectedBrandId]);
+    return apiCampaigns;
+  }, [apiCampaigns, selectedBrandId]);
+
+  const latestCampaigns = useMemo(() => {
+    if (!selectedBrandId) return [];
+    return [...filteredCampaigns]
+      .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+      .slice(0, 3);
+  }, [filteredCampaigns, selectedBrandId]);
+
+  const brandNameForCampaign = (campaign) =>
+    apiBrands.find((b) => String(b.id) === String(campaign.brandId))?.name ?? 'Brand';
 
   const filteredCampaignIds = useMemo(
     () => new Set(filteredCampaigns.map((c) => c.id)),
@@ -255,15 +260,17 @@ const Dashboard = () => {
       toast.error('Please select a date and time');
       return;
     }
-    
+
     try {
       setIsScheduling(true);
-      
+
       // Get the current state
       const currentState = getState();
-      
+
       // Find the draft associated with this campaign
-      const draft = currentState.drafts.find(d => d.campaignId === campaignId && d.status === 'draft');
+      const draft = currentState.drafts.find(
+        (d) => String(d.campaignId) === String(campaignId) && d.status === 'draft'
+      );
       
       if (!draft) {
         throw new Error('No draft found for this campaign. Please create a draft first.');
@@ -293,23 +300,6 @@ const Dashboard = () => {
     }
   };
 
-  // Handle creating a new campaign
-  const handleCreateCampaign = () => {
-    navigate('/campaigns/new');
-  };
-
-  // Handle editing a campaign
-  const handleEditCampaign = (campaignId) => {
-    navigate(`/campaigns/${campaignId}/edit`);
-  };
-
-  // Handle deleting a campaign
-  const handleDeleteCampaign = (campaignId) => {
-    if (window.confirm('Are you sure you want to delete this campaign?')) {
-      deleteCampaign(campaignId);
-    }
-  };
-
   // Handle starting the scheduling process
   const startScheduling = (draftId) => {
     console.log('Starting scheduling for draft:', draftId);
@@ -322,95 +312,95 @@ const Dashboard = () => {
     <div className="space-y-6">
       <div className={`${shellCard} overflow-hidden`}>
         <div className="px-4 py-5 sm:p-6 sm:px-8">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
-            <h2 className="text-lg font-semibold tracking-tight text-gray-900">Campaigns</h2>
-            <button
-              onClick={handleCreateCampaign}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-            >
-              <Plus className="h-5 w-5 shrink-0" aria-hidden />
-              New Campaign
-            </button>
+          <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold tracking-tight text-gray-900">Campaigns</h2>
+              <p className="mt-1 text-sm text-gray-500">Your latest campaigns for this brand at a glance.</p>
+            </div>
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
+              <Link
+                to="/campaigns"
+                className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-800 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+              >
+                Manage campaigns
+              </Link>
+            </div>
           </div>
 
           <div className="space-y-4">
-            {filteredCampaigns.length === 0 ? (
+            {apiCampaignsLoading ? (
+              <div className="flex justify-center py-8">
+                <div
+                  className="h-8 w-8 animate-spin rounded-full border-2 border-gray-200 border-t-blue-600"
+                  aria-hidden
+                />
+              </div>
+            ) : null}
+            {!apiCampaignsLoading && filteredCampaigns.length === 0 ? (
               <p className="text-sm text-gray-600">
                 {!selectedBrandId
-                  ? 'Select a workspace brand above to view and manage campaigns for that brand.'
-                  : 'No campaigns for this brand yet. Create one to get started.'}
+                  ? 'Select a workspace brand above to view the latest campaigns for that brand.'
+                  : 'No campaigns for this brand yet. Open Manage campaigns to add one.'}
               </p>
             ) : null}
-            {filteredCampaigns.map((campaign) => {
-              const platform = getPlatformInfo(campaign.platform);
+            {!apiCampaignsLoading &&
+              latestCampaigns.map((campaign) => {
+              const platformIds = Array.isArray(campaign.platforms) && campaign.platforms.length
+                ? campaign.platforms
+                : campaign.platform
+                  ? [campaign.platform]
+                  : [];
+              const hasDraftForCampaign = filteredDrafts.some(
+                (d) =>
+                  d.status === 'draft' && String(d.campaignId) === String(campaign.id)
+              );
               return (
-                <div key={campaign.id} className={innerCard}>
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="flex flex-wrap items-center gap-2">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${platform.bgColor}`}>
-                          {platform.icon} {platform.name}
-                        </span>
-                        <h3 className="text-base font-semibold text-gray-900 sm:text-lg">
-                          {campaign.name}
-                        </h3>
-                      </div>
-                      <div className="flex items-center gap-1 sm:shrink-0">
-                        {(!campaign.status || campaign.status === 'draft') && (
-                          <button
-                            onClick={() => startScheduling(campaign.id)}
-                            className="rounded-lg p-2 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
-                            title="Schedule"
-                            type="button"
+                <div key={campaign.id} className={campaignCardPreviewClass}>
+                  <div className="flex items-start gap-3">
+                    <div className={campaignCardIconWrapClass} aria-hidden>
+                      <Megaphone className="h-5 w-5" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+                        <div className="min-w-0">
+                          <h3 className="text-base font-semibold leading-snug text-gray-900 sm:text-lg">
+                            {campaign.name}
+                          </h3>
+                          <p className="mt-1 text-sm text-gray-600">{brandNameForCampaign(campaign)}</p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <span
+                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${campaignStatusBadgeClass(
+                              campaign.status
+                            )}`}
                           >
-                            <Calendar className="h-5 w-5" aria-hidden />
-                          </button>
-                        )}
-                        <button
-                          onClick={() => handleEditCampaign(campaign.id)}
-                          className="rounded-lg p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-900"
-                          title="Edit"
-                          type="button"
-                        >
-                          <Pencil className="h-5 w-5" aria-hidden />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteCampaign(campaign.id)}
-                          className="rounded-lg p-2 text-red-600 hover:bg-red-50 hover:text-red-700"
-                          title="Delete"
-                          type="button"
-                        >
-                          <Trash2 className="h-5 w-5" aria-hidden />
-                        </button>
-                      </div>
-                    </div>
-                    <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-                      <div>
-                        <p className="text-sm font-medium text-gray-500">Status</p>
-                        <p className="mt-1 text-sm text-gray-900">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            campaign.status === 'active' 
-                              ? 'bg-green-100 text-green-800' 
-                              : 'bg-yellow-100 text-yellow-800'
-                          }`}>
-                            {campaign.status ? 
-                              campaign.status.charAt(0).toUpperCase() + campaign.status.slice(1) : 
-                              'Draft'}
+                            {formatCampaignStatus(campaign.status)}
                           </span>
-                        </p>
+                          {hasDraftForCampaign ? (
+                            <button
+                              onClick={() => startScheduling(campaign.id)}
+                              className="rounded-lg p-2 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
+                              title="Schedule draft post"
+                              type="button"
+                            >
+                              <Calendar className="h-5 w-5" aria-hidden />
+                            </button>
+                          ) : null}
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-500">Budget</p>
-                        <p className="mt-1 text-sm text-gray-900">
-                          ${campaign.budget ? campaign.budget.toLocaleString() : '0'}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-500">Spent</p>
-                        <p className="mt-1 text-sm text-gray-900">
-                          ${campaign.spent ? campaign.spent.toLocaleString() : '0'}
-                        </p>
+                      <div className="mt-3">
+                        <p className={campaignPlatformLabelClass}>Platform</p>
+                        <div className="mt-1.5">
+                          <PlatformIconRow
+                            platforms={platformIds}
+                            badge
+                            iconClassName="h-3.5 w-3.5"
+                            gapClassName="gap-1.5"
+                          />
+                        </div>
                       </div>
                     </div>
+                  </div>
                 </div>
               );
             })}
@@ -418,61 +408,24 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {/* Upcoming Posts Section */}
       <div className={`${shellCard} overflow-hidden`}>
-        <div className="px-4 py-5 sm:p-6 sm:px-8">
-          <h2 className="text-lg font-semibold tracking-tight text-gray-900 mb-4">Upcoming Posts</h2>
-          <div className="space-y-4">
-            {filteredScheduled.length === 0 ? (
-              <p className="text-sm text-gray-500">
-                {!selectedBrandId
-                  ? 'Select a workspace brand to see upcoming posts for that brand.'
-                  : 'No upcoming posts scheduled.'}
-              </p>
-            ) : (
-              filteredScheduled.map(post => {
-                const platform = getPlatformInfo(post.platform);
-                const campaign = filteredCampaigns.find(c => c.id === post.campaignId);
-                
-                return (
-                  <div key={post.id} className={innerCard}>
-                    <div>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${platform.bgColor} mr-3`}>
-                            {platform.icon} {platform.name}
-                          </span>
-                          <p className="text-sm font-medium text-gray-900 truncate">
-                            {campaign?.name || 'No Campaign'}
-                          </p>
-                        </div>
-                        <div className="ml-2 flex-shrink-0 flex">
-                          <p className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                            new Date(post.scheduledAt) < new Date()
-                              ? 'bg-red-100 text-red-800'
-                              : 'bg-green-100 text-green-800'
-                          }`}>
-                            {formatTimeLeft(post.scheduledAt)}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="mt-2 sm:flex sm:justify-between">
-                        <div className="sm:flex">
-                          <p className="flex items-center text-sm text-gray-500">
-                            {post.caption.length > 100 ? `${post.caption.substring(0, 100)}...` : post.caption}
-                          </p>
-                        </div>
-                        <div className="mt-2 flex items-center text-sm text-gray-500 sm:mt-0">
-                          <Calendar className="mr-1.5 h-5 w-5 shrink-0 text-gray-400" aria-hidden />
-                          <p>{nice(post.scheduledAt)}</p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
+        <div className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-4">
+          <p className="text-sm text-gray-600">
+            {!selectedBrandId
+              ? 'Select a workspace brand to see how many posts are scheduled for that brand.'
+              : filteredScheduled.length === 0
+                ? 'No scheduled posts for this brand yet. Schedule a draft from a campaign card above.'
+                : `${filteredScheduled.length} scheduled ${filteredScheduled.length === 1 ? 'post' : 'posts'} for this brand — open the Scheduled tab for the full list.`}
+          </p>
+          <button
+            type="button"
+            onClick={() => setActiveTab('scheduled')}
+            disabled={!selectedBrandId}
+            className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Calendar className="h-4 w-4 shrink-0 text-blue-600" aria-hidden />
+            View scheduled posts
+          </button>
         </div>
       </div>
     </div>
@@ -492,15 +445,18 @@ const Dashboard = () => {
         ) : (
           <div className="space-y-4">
             {filteredScheduled.map(post => {
-              const platform = getPlatformInfo(post.platform);
               const campaign = filteredCampaigns.find(c => c.id === post.campaignId);
               
               return (
                 <div key={post.id} className={innerCard}>
                   <div className="flex items-center justify-between gap-2">
                       <div className="flex min-w-0 items-center">
-                        <span className={`inline-flex shrink-0 items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${platform.bgColor} mr-3`}>
-                          {platform.icon} {platform.name}
+                        <span className="mr-3 shrink-0">
+                          <PlatformIconRow
+                            platforms={post.platform}
+                            badge
+                            iconClassName="h-3.5 w-3.5"
+                          />
                         </span>
                         <p className="text-sm font-semibold text-gray-900 truncate">
                           {campaign?.name || 'No Campaign'}

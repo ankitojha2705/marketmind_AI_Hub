@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { PlatformIconRow } from '../components/PlatformIcon'
 import { listScheduled, subscribe } from '../store/db.js'
 import { nice } from '../utils/time.js'
 
@@ -23,7 +24,7 @@ return (
 <thead><tr><th>When</th><th>Platform</th><th>Caption</th></tr></thead>
 <tbody>
 {scheduled.map(s => (
-<tr key={s.id}><td>{nice(s.scheduledAt)}</td><td><span className="badge">{s.platform}</span></td><td className="small">{s.caption}</td></tr>
+<tr key={s.id}><td>{nice(s.scheduledAt)}</td><td><PlatformIconRow platforms={s.platform} badge iconClassName="h-3.5 w-3.5" /></td><td className="small">{s.caption}</td></tr>
 ))}
 </tbody>
 </table>

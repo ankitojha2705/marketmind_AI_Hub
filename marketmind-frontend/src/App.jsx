@@ -18,6 +18,7 @@ const Library = React.lazy(() => import('./pages/Library'));
 const Settings = React.lazy(() => import('./pages/Settings'));
 const BrandsPage = React.lazy(() => import('./pages/BrandsPage'));
 const BrandManagePage = React.lazy(() => import('./pages/BrandManagePage'));
+const CampaignsPage = React.lazy(() => import('./pages/CampaignsPage'));
 
 function HomeRoute() {
   const { isAuthenticated } = useAuth();
@@ -79,6 +80,14 @@ function App() {
                 element={
                   <PrivateRoute>
                     <BrandManagePage />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/campaigns"
+                element={
+                  <PrivateRoute>
+                    <CampaignsPage />
                   </PrivateRoute>
                 }
               />

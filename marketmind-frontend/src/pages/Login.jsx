@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Box, Button, TextField, Typography, Divider } from '@mui/material';
-import GoogleIcon from '@mui/icons-material/Google';
+import { FcGoogle } from 'react-icons/fc';
 import { useAuth } from '../context/AuthContext';
 
 const fieldSx = {
@@ -144,7 +144,7 @@ const Login = () => {
             <Button
               fullWidth
               variant="outlined"
-              startIcon={<GoogleIcon />}
+              startIcon={<FcGoogle size={22} aria-hidden />}
               onClick={handleGoogleLogin}
               sx={{
                 py: 1.1,

@@ -8,8 +8,14 @@ from typing import List, Optional, Dict
 import json
 import os
 import logging
+from pathlib import Path
+from urllib.parse import urlparse
+from uuid import uuid4
+
+import requests
 
 logger = logging.getLogger(__name__)
+GENERATED_IMAGES_DIR = Path(__file__).resolve().parents[1] / "generated-images"
 
 
 class GeneratedPost(BaseModel):
@@ -153,6 +159,41 @@ class ContentAgentConfig:
         )
 
 
+def _infer_ext(image_url: str, content_type: str | None) -> str:
+    if content_type:
+        ct = content_type.lower()
+        if "png" in ct:
+            return ".png"
+        if "jpeg" in ct or "jpg" in ct:
+            return ".jpg"
+        if "webp" in ct:
+            return ".webp"
+    parsed = urlparse(image_url)
+    suffix = Path(parsed.path).suffix.lower()
+    if suffix in {".png", ".jpg", ".jpeg", ".webp"}:
+        return suffix
+    return ".png"
+
+
+def save_image_locally(image_url: str) -> Optional[str]:
+    """
+    Download generated image to local storage and return a stable served URL.
+    """
+    try:
+        GENERATED_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+        resp = requests.get(image_url, timeout=20)
+        resp.raise_for_status()
+        ext = _infer_ext(image_url, resp.headers.get("content-type"))
+        filename = f"{uuid4().hex}{ext}"
+        path = GENERATED_IMAGES_DIR / filename
+        path.write_bytes(resp.content)
+        public_base = os.getenv("AGENTS_PUBLIC_BASE_URL", "http://localhost:8001").rstrip("/")
+        return f"{public_base}/generated-images/{filename}"
+    except Exception as e:
+        logger.error("Failed to persist generated image locally: %s", e)
+        return None
+
+
 def generate_instagram_image(image_prompt: str, business_type: str, api_key: Optional[str] = None) -> Optional[str]:
     """
     Generate an Instagram-ready image using DALL-E 3
@@ -184,7 +225,11 @@ def generate_instagram_image(image_prompt: str, business_type: str, api_key: Opt
         )
         
         image_url = response.data[0].url
-        logger.info(f"✓ Image generated successfully: {image_url}")
+        stable_url = save_image_locally(image_url)
+        if stable_url:
+            logger.info("✓ Image generated and saved locally: %s", stable_url)
+            return stable_url
+        logger.warning("Image generated but local save failed; returning temporary URL")
         return image_url
         
     except Exception as e:

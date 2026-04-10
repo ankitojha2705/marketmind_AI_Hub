@@ -4,7 +4,7 @@ import sys
 import logging
 import time
 from pathlib import Path
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from dotenv import load_dotenv
 
@@ -34,6 +34,8 @@ load_dotenv()
 # Create Flask app
 app = Flask(__name__)
 CORS(app, origins=["http://localhost:5173", "http://localhost:3000"])
+GENERATED_IMAGES_DIR = Path(__file__).parent / "generated-images"
+GENERATED_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 
 # Mock context for orchestrator (since we're not using uAgents protocol)
 class MockContext:
@@ -46,6 +48,11 @@ class MockContext:
 def health_check():
     """Health check endpoint"""
     return jsonify({"status": "healthy", "service": "Marketing Orchestrator API"})
+
+
+@app.route('/generated-images/<path:filename>', methods=['GET'])
+def serve_generated_image(filename: str):
+    return send_from_directory(GENERATED_IMAGES_DIR, filename)
 
 import asyncio
 

@@ -4,6 +4,8 @@ import { format } from 'date-fns';
 import {
   BarChart3,
   Calendar,
+  Camera,
+  X,
   Mail,
   MapPin,
   Megaphone,
@@ -151,6 +153,7 @@ const Dashboard = () => {
   const [schedulingDraftId, setSchedulingDraftId] = useState(null);
   const [scheduleDate, setScheduleDate] = useState('');
   const [isScheduling, setIsScheduling] = useState(false);
+  const [imagePreview, setImagePreview] = useState(null);
   const [apiBrands, setApiBrands] = useState([]);
   const [apiBrandsLoading, setApiBrandsLoading] = useState(true);
   const [selectedBrandId, setSelectedBrandId] = useState(() => getDashboardBrandId());
@@ -613,6 +616,26 @@ const Dashboard = () => {
                       </div>
                     </div>
                     <div className="mt-2">
+                      {(() => {
+                        const imageUrl = post.media?.imageUrl || post.media?.image_url || null;
+                        const imagePrompt = post.media?.imagePrompt || post.media?.image_prompt || '';
+                        if (!imageUrl) return null;
+                        return (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setImagePreview({
+                                src: imageUrl,
+                                alt: imagePrompt || 'Scheduled post media',
+                              })
+                            }
+                            className="mb-2 inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-800 shadow-sm hover:bg-gray-50"
+                          >
+                            <Camera className="h-4 w-4" aria-hidden />
+                            View image
+                          </button>
+                        );
+                      })()}
                       <p className="text-sm text-gray-600">
                         {post.caption}
                       </p>
@@ -874,6 +897,21 @@ const Dashboard = () => {
         setScheduleDate={setScheduleDate}
         isScheduling={isScheduling}
       />
+      {imagePreview ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="relative w-full max-w-5xl rounded-xl bg-white p-3 shadow-xl">
+            <button
+              type="button"
+              onClick={() => setImagePreview(null)}
+              className="absolute right-3 top-3 inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+              aria-label="Close image preview"
+            >
+              <X className="h-4 w-4" aria-hidden />
+            </button>
+            <img src={imagePreview.src} alt={imagePreview.alt} className="max-h-[80vh] w-full rounded-lg object-contain" />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };

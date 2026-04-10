@@ -1,18 +1,36 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
-import { getState, subscribe, scheduleDraft } from '../store/db';
 import {
-  CalendarIcon, 
-  ClockIcon, 
-  ChartBarIcon, 
-  DocumentTextIcon,
-  PlusIcon,
-  PencilIcon,
-  TrashIcon
-} from '@heroicons/react/24/outline';
+  BarChart3,
+  Calendar,
+  Camera,
+  X,
+  Mail,
+  MapPin,
+  Megaphone,
+  PieChart,
+  Plus,
+} from 'lucide-react';
+import { toast } from 'sonner';
+import { getState, subscribe, scheduleDraft } from '../store/db';
+import { fetchMyBrands, fetchBrandCampaigns, fetchBrandPosts, updateContentCampaign } from '../services/api';
+import BrandAvatar from '../components/BrandAvatar';
+import { useAuth } from '../context/AuthContext';
+import { getDashboardBrandId, setDashboardBrandId } from '../utils/dashboardBrandStorage';
+import { PlatformIconRow } from '../components/PlatformIcon';
+import {
+  campaignStatusBadgeClass,
+  formatCampaignStatus,
+  campaignCardPreviewClass,
+  campaignCardIconWrapClass,
+  campaignPlatformLabelClass,
+} from '../utils/campaignDisplay';
 
-// Using DocumentTextIcon as a fallback for ChartPieIcon
-const ChartPieIcon = DocumentTextIcon;
+const shellCard =
+  'rounded-2xl border border-gray-200 bg-[hsl(0,0%,99.5%)] shadow-sm';
+const innerCard =
+  'rounded-xl border border-gray-200/90 bg-white p-4 shadow-sm sm:p-5';
 
 // ScheduleModal Component
 const ScheduleModal = ({ isOpen, onClose, onSchedule, scheduleDate, setScheduleDate, isScheduling }) => {
@@ -24,13 +42,13 @@ const ScheduleModal = ({ isOpen, onClose, onSchedule, scheduleDate, setScheduleD
           onClick={onClose}
         ></div>
         <span className="hidden sm:inline-block sm:align-middle sm:h-screen">&#8203;</span>
-        <div className="inline-block align-bottom bg-white dark:bg-gray-800 rounded-lg px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full sm:p-6">
+        <div className="inline-block align-bottom rounded-2xl border border-gray-200 bg-[hsl(0,0%,99.5%)] px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full sm:p-6">
           <div>
-            <h3 className="text-lg leading-6 font-medium text-gray-900 dark:text-white mb-4">
+            <h3 className="text-lg font-semibold tracking-tight text-gray-900 mb-4">
               Schedule Post
             </h3>
             <div className="mt-2">
-              <label htmlFor="schedule-date" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              <label htmlFor="schedule-date" className="block text-sm font-medium text-gray-700">
                 Select date and time
               </label>
               <input
@@ -39,7 +57,7 @@ const ScheduleModal = ({ isOpen, onClose, onSchedule, scheduleDate, setScheduleD
                 value={scheduleDate}
                 onChange={(e) => setScheduleDate(e.target.value)}
                 min={new Date().toISOString().slice(0, 16)}
-                className="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-gray-700 dark:text-white"
+                className="mt-1 block w-full rounded-lg border border-gray-300 bg-white py-2 px-3 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
               />
             </div>
           </div>
@@ -48,7 +66,7 @@ const ScheduleModal = ({ isOpen, onClose, onSchedule, scheduleDate, setScheduleD
               type="button"
               onClick={onSchedule}
               disabled={!scheduleDate || isScheduling}
-              className={`w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 text-base font-medium text-white sm:col-start-2 sm:text-sm ${
+              className={`w-full inline-flex justify-center rounded-lg border border-transparent px-4 py-2.5 text-sm font-semibold text-white shadow-sm sm:col-start-2 ${
                 scheduleDate && !isScheduling
                   ? 'bg-blue-600 hover:bg-blue-700'
                   : 'bg-blue-400 cursor-not-allowed'
@@ -59,7 +77,7 @@ const ScheduleModal = ({ isOpen, onClose, onSchedule, scheduleDate, setScheduleD
             <button
               type="button"
               onClick={onClose}
-              className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 shadow-sm px-4 py-2 bg-white dark:bg-gray-700 text-base font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 sm:mt-0 sm:col-start-1 sm:text-sm"
+              className="mt-3 w-full inline-flex justify-center rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 sm:mt-0 sm:col-start-1"
             >
               Cancel
             </button>
@@ -70,20 +88,24 @@ const ScheduleModal = ({ isOpen, onClose, onSchedule, scheduleDate, setScheduleD
   );
 };
 
-// Helper function for navigation
-const navigate = (path) => {
-  window.location.hash = `#${path}`;
+// Format date to a nice readable format
+const parseApiDate = (value) => {
+  if (!value) return new Date('');
+  if (value instanceof Date) return value;
+  const raw = String(value).trim();
+  // If API returns a naive ISO string, treat it as UTC.
+  const withZone = /([zZ]|[+\-]\d{2}:\d{2})$/.test(raw) ? raw : `${raw}Z`;
+  return new Date(withZone);
 };
 
-// Format date to a nice readable format
 const nice = (dateString) => {
-  const date = new Date(dateString);
+  const date = parseApiDate(dateString);
   return format(date, 'MMM d, yyyy h:mm a');
 };
 
 // Format time left for scheduled posts
 const formatTimeLeft = (dateString) => {
-  const date = new Date(dateString);
+  const date = parseApiDate(dateString);
   const now = new Date();
   const diffInMs = date - now;
   const diffInHours = Math.ceil(diffInMs / (1000 * 60 * 60));
@@ -114,48 +136,15 @@ const formatTimeLeft = (dateString) => {
   }
 };
 
-// Get platform info
-const getPlatformInfo = (platform) => {
-  const platforms = {
-    facebook: {
-      name: 'Facebook',
-      color: 'bg-blue-100 text-blue-800',
-      icon: 'FB',
-      bgColor: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
-    },
-    instagram: {
-      name: 'Instagram',
-      color: 'bg-pink-100 text-pink-800',
-      icon: 'IG',
-      bgColor: 'bg-pink-100 text-pink-800 dark:bg-pink-900/30 dark:text-pink-300'
-    },
-    twitter: {
-      name: 'Twitter',
-      color: 'bg-blue-100 text-blue-400',
-      icon: 'TW',
-      bgColor: 'bg-blue-100 text-blue-400 dark:bg-blue-900/30 dark:text-blue-300'
-    },
-    linkedin: {
-      name: 'LinkedIn',
-      color: 'bg-blue-50 text-blue-700',
-      icon: 'IN',
-      bgColor: 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
-    },
-    default: {
-      name: 'Other',
-      color: 'bg-gray-100 text-gray-800',
-      icon: 'OT',
-      bgColor: 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
-    }
-  };
-
-  return platforms[platform?.toLowerCase()] || platforms.default;
-};
-
 // Main Dashboard Component
 const Dashboard = () => {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const userEmail = user?.email || '';
+
   // State for campaigns, drafts, and scheduled posts
-  const [campaigns, setCampaigns] = useState([]);
+  const [apiCampaigns, setApiCampaigns] = useState([]);
+  const [apiCampaignsLoading, setApiCampaignsLoading] = useState(false);
   const [drafts, setDrafts] = useState([]);
   const [scheduled, setScheduled] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -164,15 +153,138 @@ const Dashboard = () => {
   const [schedulingDraftId, setSchedulingDraftId] = useState(null);
   const [scheduleDate, setScheduleDate] = useState('');
   const [isScheduling, setIsScheduling] = useState(false);
+  const [imagePreview, setImagePreview] = useState(null);
+  const [apiBrands, setApiBrands] = useState([]);
+  const [apiBrandsLoading, setApiBrandsLoading] = useState(true);
+  const [selectedBrandId, setSelectedBrandId] = useState(() => getDashboardBrandId());
 
-  // Load data from database
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await fetchMyBrands();
+        if (!cancelled) setApiBrands(data.brands || []);
+      } catch (e) {
+        if (!cancelled) {
+          toast.error(e.response?.data?.error || e.message || 'Could not load brands');
+        }
+      } finally {
+        if (!cancelled) setApiBrandsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (apiBrandsLoading) return;
+    const stored = getDashboardBrandId();
+    if (stored && !apiBrands.some((b) => String(b.id) === stored)) {
+      setDashboardBrandId('');
+      setSelectedBrandId('');
+      return;
+    }
+    setSelectedBrandId(stored);
+  }, [apiBrands, apiBrandsLoading]);
+
+  const handleBrandCardClick = (brandId) => {
+    const sid = String(brandId);
+    const next = selectedBrandId === sid ? '' : sid;
+    setSelectedBrandId(next);
+    setDashboardBrandId(next);
+  };
+
+  useEffect(() => {
+    if (!selectedBrandId) {
+      setApiCampaigns([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setApiCampaignsLoading(true);
+      try {
+        const list = await fetchBrandCampaigns(selectedBrandId);
+        const campaigns = Array.isArray(list) ? list : [];
+        const todayLocal = format(new Date(), 'yyyy-MM-dd');
+
+        const activationTargets = campaigns.filter((c) => {
+          const status = String(c?.status || '').toLowerCase();
+          if (status !== 'scheduled' || !c?.startDate) return false;
+          try {
+            return format(new Date(c.startDate), 'yyyy-MM-dd') <= todayLocal;
+          } catch {
+            return false;
+          }
+        });
+
+        const activatedIds = new Set();
+        for (const campaign of activationTargets) {
+          try {
+            await updateContentCampaign(selectedBrandId, campaign.id, { status: 'active' });
+            activatedIds.add(String(campaign.id));
+          } catch {
+            // Ignore per-campaign activation failures and continue with remaining campaigns.
+          }
+        }
+
+        const merged = campaigns.map((c) =>
+          activatedIds.has(String(c.id)) ? { ...c, status: 'active' } : c
+        );
+        if (!cancelled) setApiCampaigns(merged);
+      } catch (e) {
+        if (!cancelled) {
+          toast.error(
+            e.response?.data?.detail || e.response?.data?.error || e.message || 'Could not load campaigns'
+          );
+          setApiCampaigns([]);
+        }
+      } finally {
+        if (!cancelled) setApiCampaignsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedBrandId]);
+
+  useEffect(() => {
+    if (!selectedBrandId) {
+      setScheduled([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await fetchBrandPosts(selectedBrandId, { status: 'scheduled' });
+        if (!cancelled) {
+          setScheduled(Array.isArray(list) ? list : []);
+
+        }
+      } catch (e) {
+        if (!cancelled) {
+          console.error('Failed to fetch brand posts', {
+            brandId: selectedBrandId,
+            error: e?.response?.data || e?.message || e,
+          });
+          toast.error(e.response?.data?.detail || e.response?.data?.error || e.message || 'Could not load posts');
+          setScheduled([]);
+        }
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedBrandId]);
+
+  // Local drafts (IndexedDB). Scheduled posts are sourced from content API.
   useEffect(() => {
     const loadData = () => {
       try {
         const state = getState();
-        setCampaigns(state.campaigns || []);
         setDrafts(state.drafts || []);
-        setScheduled(state.drafts?.filter(d => d.status === 'scheduled') || []);
       } catch (error) {
         console.error('Error loading data:', error);
       } finally {
@@ -185,21 +297,67 @@ const Dashboard = () => {
     return () => unsubscribe();
   }, []);
 
+  const filteredCampaigns = useMemo(() => {
+    if (!selectedBrandId) return [];
+    return apiCampaigns;
+  }, [apiCampaigns, selectedBrandId]);
+
+  const latestCampaigns = useMemo(() => {
+    if (!selectedBrandId) return [];
+    return [...filteredCampaigns]
+      .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+      .slice(0, 3);
+  }, [filteredCampaigns, selectedBrandId]);
+
+  const brandMetaForCampaign = (campaign) => {
+    const b = apiBrands.find((x) => String(x.id) === String(campaign.brandId));
+    return { name: b?.name ?? 'Brand', logoUrl: b?.logo_url };
+  };
+
+  const filteredCampaignIds = useMemo(
+    () => new Set(filteredCampaigns.map((c) => c.id)),
+    [filteredCampaigns]
+  );
+
+  const filteredDrafts = useMemo(
+    () => drafts.filter((d) => filteredCampaignIds.has(d.campaignId)),
+    [drafts, filteredCampaignIds]
+  );
+
+  const filteredScheduled = useMemo(
+    () => scheduled.filter((d) => filteredCampaignIds.has(d.campaignId)),
+    [scheduled, filteredCampaignIds]
+  );
+
+  useEffect(() => {
+    if (filteredScheduled.length === 0) return;
+
+    filteredScheduled.forEach((post) => {
+      const campaign = filteredCampaigns.find((c) => String(c.id) === String(post.campaignId));
+      const brandIdFromCampaign = campaign?.brandId;
+      const fallbackBrandId = post?.brandId;
+      const resolvedBrandId = brandIdFromCampaign || fallbackBrandId;
+      const brand = apiBrands.find((b) => String(b.id) === String(resolvedBrandId));
+    });
+  }, [apiBrands, filteredCampaigns, filteredScheduled, scheduled.length, selectedBrandId]);
+
   // Handle scheduling a post
   const handleSchedule = async (campaignId) => {
     if (!scheduleDate) {
-      alert('Please select a date and time');
+      toast.error('Please select a date and time');
       return;
     }
-    
+
     try {
       setIsScheduling(true);
-      
+
       // Get the current state
       const currentState = getState();
-      
+
       // Find the draft associated with this campaign
-      const draft = currentState.drafts.find(d => d.campaignId === campaignId && d.status === 'draft');
+      const draft = currentState.drafts.find(
+        (d) => String(d.campaignId) === String(campaignId) && d.status === 'draft'
+      );
       
       if (!draft) {
         throw new Error('No draft found for this campaign. Please create a draft first.');
@@ -214,35 +372,17 @@ const Dashboard = () => {
       // Update local state with fresh data from the store
       const updatedState = getState();
       setDrafts(updatedState.drafts.filter(d => d.status === 'draft'));
-      setScheduled(updatedState.drafts.filter(d => d.status === 'scheduled'));
       
       // Reset form
       setSchedulingDraftId(null);
       setScheduleDate('');
       
-      alert('Post scheduled successfully!');
+      toast.success('Post scheduled successfully.');
     } catch (error) {
       console.error('Error scheduling post:', error);
-      alert(`Failed to schedule post: ${error.message}`);
+      toast.error(error.message || 'Failed to schedule post');
     } finally {
       setIsScheduling(false);
-    }
-  };
-
-  // Handle creating a new campaign
-  const handleCreateCampaign = () => {
-    navigate('/campaigns/new');
-  };
-
-  // Handle editing a campaign
-  const handleEditCampaign = (campaignId) => {
-    window.location.hash = `#/campaigns/${campaignId}/edit`;
-  };
-
-  // Handle deleting a campaign
-  const handleDeleteCampaign = (campaignId) => {
-    if (window.confirm('Are you sure you want to delete this campaign?')) {
-      setCampaigns(campaigns.filter(c => c.id !== campaignId));
     }
   };
 
@@ -253,89 +393,158 @@ const Dashboard = () => {
     setScheduleDate('');
   };
 
-  // Render the overview tab
+  const openCampaignFromCard = (campaign) => {
+    const status = String(campaign?.status || '').toLowerCase();
+    if (status === 'cancelled') {
+      toast.error('Cancelled campaigns cannot be opened');
+      return;
+    }
+    const bid = String(campaign.brandId || selectedBrandId || '');
+    if (bid) setDashboardBrandId(bid);
+    navigate(`/campaigns/${campaign.id}/edit`);
+  };
+
+  const hasBrands = apiBrands.length > 0;
+  const showNoCampaignsFocus =
+    hasBrands &&
+    selectedBrandId &&
+    !apiCampaignsLoading &&
+    filteredCampaigns.length === 0;
+  const selectedBrandName =
+    apiBrands.find((b) => String(b.id) === String(selectedBrandId))?.name ?? 'This brand';
+
   const renderOverviewTab = () => (
     <div className="space-y-6">
-      <div className="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
-        <div className="px-4 py-5 sm:p-6">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-lg font-medium text-gray-900 dark:text-white">Campaigns</h2>
-            <button
-              onClick={handleCreateCampaign}
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-            >
-              <PlusIcon className="-ml-1 mr-2 h-5 w-5" />
-              New Campaign
-            </button>
+      <div className={`${shellCard} overflow-hidden`}>
+        <div className="px-4 py-5 sm:p-6 sm:px-8">
+          <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold tracking-tight text-gray-900">Campaigns</h2>
+              <p className="mt-1 text-sm text-gray-500">Your latest campaigns for this brand at a glance.</p>
+            </div>
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
+              <Link
+                to="/campaigns"
+                className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-800 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+              >
+                Manage campaigns
+              </Link>
+            </div>
           </div>
 
           <div className="space-y-4">
-            {campaigns.map(campaign => {
-              const platform = getPlatformInfo(campaign.platform);
-              return (
-                <div key={campaign.id} className="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
-                  <div className="px-4 py-5 sm:p-6">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${platform.bgColor} mr-3`}>
-                          {platform.icon} {platform.name}
-                        </span>
-                        <h3 className="text-lg font-medium text-gray-900 dark:text-white">
-                          {campaign.name}
-                        </h3>
-                      </div>
-                      <div className="flex space-x-2">
-                        {(!campaign.status || campaign.status === 'draft') && (
-                          <button
-                            onClick={() => startScheduling(campaign.id)}
-                            className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-                            title="Schedule"
-                          >
-                            <CalendarIcon className="h-5 w-5" />
-                          </button>
-                        )}
-                        <button
-                          onClick={() => handleEditCampaign(campaign.id)}
-                          className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                          title="Edit"
-                        >
-                          <PencilIcon className="h-5 w-5" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteCampaign(campaign.id)}
-                          className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
-                          title="Delete"
-                        >
-                          <TrashIcon className="h-5 w-5" />
-                        </button>
-                      </div>
+            {showNoCampaignsFocus ? (
+              <div className="rounded-xl border border-blue-200 bg-gradient-to-b from-blue-50/90 to-white p-6 shadow-sm sm:p-8">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="flex gap-4">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-800">
+                      <Megaphone className="h-6 w-6" aria-hidden />
                     </div>
-                    <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-                      <div>
-                        <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Status</p>
-                        <p className="mt-1 text-sm text-gray-900 dark:text-white">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            campaign.status === 'active' 
-                              ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200' 
-                              : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-200'
-                          }`}>
-                            {campaign.status ? 
-                              campaign.status.charAt(0).toUpperCase() + campaign.status.slice(1) : 
-                              'Draft'}
+                    <div>
+                      <h3 className="text-lg font-semibold tracking-tight text-gray-900">
+                        Create your first campaign
+                      </h3>
+                      <p className="mt-2 text-sm text-gray-600 leading-relaxed">
+                        <span className="font-medium text-gray-800">{selectedBrandName}</span> does not have any
+                        campaigns yet. Start one to plan channels, schedule, and audience. Then you can add drafts
+                        and scheduled posts from here.
+                      </p>
+                    </div>
+                  </div>
+                  <Link
+                    to="/campaigns/new"
+                    className="inline-flex shrink-0 items-center justify-center gap-2 self-start rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 sm:self-center"
+                  >
+                    <Plus className="h-5 w-5 shrink-0" aria-hidden />
+                    New campaign
+                  </Link>
+                </div>
+              </div>
+            ) : null}
+            {apiCampaignsLoading ? (
+              <div className="flex justify-center py-8">
+                <div
+                  className="h-8 w-8 animate-spin rounded-full border-2 border-gray-200 border-t-blue-600"
+                  aria-hidden
+                />
+              </div>
+            ) : null}
+            {!apiCampaignsLoading && filteredCampaigns.length === 0 && !showNoCampaignsFocus ? (
+              <p className="text-sm text-gray-600">
+                {!selectedBrandId
+                  ? 'Select a workspace brand above to view the latest campaigns for that brand.'
+                  : 'No campaigns for this brand yet. Open Manage campaigns to add one.'}
+              </p>
+            ) : null}
+            {!apiCampaignsLoading &&
+              latestCampaigns.map((campaign) => {
+              const platformIds = Array.isArray(campaign.platforms) && campaign.platforms.length
+                ? campaign.platforms
+                : campaign.platform
+                  ? [campaign.platform]
+                  : [];
+              const hasDraftForCampaign = filteredDrafts.some(
+                (d) =>
+                  d.status === 'draft' && String(d.campaignId) === String(campaign.id)
+              );
+              const brandMeta = brandMetaForCampaign(campaign);
+              return (
+                <div
+                  key={campaign.id}
+                  className={`${campaignCardPreviewClass} cursor-pointer transition-all hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md`}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => openCampaignFromCard(campaign)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      openCampaignFromCard(campaign);
+                    }
+                  }}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className={campaignCardIconWrapClass}>
+                      <BrandAvatar name={brandMeta.name} logoUrl={brandMeta.logoUrl} size="sm" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+                        <div className="min-w-0">
+                          <h3 className="text-base font-semibold leading-snug text-gray-900 sm:text-lg">
+                            {campaign.name}
+                          </h3>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <span
+                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${campaignStatusBadgeClass(
+                              campaign.status
+                            )}`}
+                          >
+                            {formatCampaignStatus(campaign.status)}
                           </span>
-                        </p>
+                          {hasDraftForCampaign ? (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                startScheduling(campaign.id);
+                              }}
+                              className="rounded-lg p-2 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
+                              title="Schedule draft post"
+                              type="button"
+                            >
+                              <Calendar className="h-5 w-5" aria-hidden />
+                            </button>
+                          ) : null}
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Budget</p>
-                        <p className="mt-1 text-sm text-gray-900 dark:text-white">
-                          ${campaign.budget ? campaign.budget.toLocaleString() : '0'}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Spent</p>
-                        <p className="mt-1 text-sm text-gray-900 dark:text-white">
-                          ${campaign.spent ? campaign.spent.toLocaleString() : '0'}
-                        </p>
+                      <div className="mt-3">
+                        <div>
+                          <PlatformIconRow
+                            platforms={platformIds}
+                            badge
+                            iconClassName="h-3.5 w-3.5"
+                            gapClassName="gap-1.5"
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -345,108 +554,96 @@ const Dashboard = () => {
           </div>
         </div>
       </div>
-
-      {/* Upcoming Posts Section */}
-      <div className="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
-        <div className="px-4 py-5 sm:p-6">
-          <h2 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Upcoming Posts</h2>
-          <div className="space-y-4">
-            {scheduled.length === 0 ? (
-              <p className="text-sm text-gray-500 dark:text-gray-400">No upcoming posts scheduled.</p>
-            ) : (
-              scheduled.map(post => {
-                const platform = getPlatformInfo(post.platform);
-                const campaign = campaigns.find(c => c.id === post.campaignId);
-                
-                return (
-                  <div key={post.id} className="bg-white dark:bg-gray-800 shadow overflow-hidden sm:rounded-lg">
-                    <div className="px-4 py-4 sm:px-6">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${platform.bgColor} mr-3`}>
-                            {platform.icon} {platform.name}
-                          </span>
-                          <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                            {campaign?.name || 'No Campaign'}
-                          </p>
-                        </div>
-                        <div className="ml-2 flex-shrink-0 flex">
-                          <p className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                            new Date(post.scheduledAt) < new Date()
-                              ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200'
-                              : 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200'
-                          }`}>
-                            {formatTimeLeft(post.scheduledAt)}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="mt-2 sm:flex sm:justify-between">
-                        <div className="sm:flex">
-                          <p className="flex items-center text-sm text-gray-500 dark:text-gray-400">
-                            {post.caption.length > 100 ? `${post.caption.substring(0, 100)}...` : post.caption}
-                          </p>
-                        </div>
-                        <div className="mt-2 flex items-center text-sm text-gray-500 dark:text-gray-400 sm:mt-0">
-                          <CalendarIcon className="flex-shrink-0 mr-1.5 h-5 w-5 text-gray-400" />
-                          <p>{nice(post.scheduledAt)}</p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
-      </div>
     </div>
   );
 
   // Render the scheduled tab
   const renderScheduledTab = () => (
-    <div className="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
-      <div className="px-4 py-5 sm:p-6">
-        <h2 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Scheduled Posts</h2>
-        {scheduled.length === 0 ? (
-          <p className="text-sm text-gray-500 dark:text-gray-400">No posts scheduled.</p>
+    <div className={`${shellCard} overflow-hidden`}>
+      <div className="px-4 py-5 sm:p-6 sm:px-8">
+        <h2 className="text-lg font-semibold tracking-tight text-gray-900 mb-4">Scheduled Posts</h2>
+        {filteredScheduled.length === 0 ? (
+          <p className="text-sm text-gray-600">
+            {!selectedBrandId ? (
+              'Select a workspace brand to see scheduled posts for that brand.'
+            ) : showNoCampaignsFocus ? (
+              <>
+                No campaigns for this brand yet, so there is nothing to schedule.{' '}
+                <Link to="/campaigns/new" className="font-semibold text-blue-600 hover:text-blue-800">
+                  Create a campaign
+                </Link>{' '}
+                first.
+              </>
+            ) : (
+              'No posts scheduled.'
+            )}
+          </p>
         ) : (
           <div className="space-y-4">
-            {scheduled.map(post => {
-              const platform = getPlatformInfo(post.platform);
-              const campaign = campaigns.find(c => c.id === post.campaignId);
+            {filteredScheduled.map(post => {
+              const campaign = filteredCampaigns.find(c => c.id === post.campaignId);
+              const brandMeta = campaign
+                ? brandMetaForCampaign(campaign)
+                : (() => {
+                    const b = apiBrands.find((x) => String(x.id) === String(post.brandId));
+                    return { name: b?.name ?? 'Brand', logoUrl: b?.logo_url };
+                  })();
               
               return (
-                <div key={post.id} className="bg-white dark:bg-gray-800 shadow overflow-hidden sm:rounded-lg">
-                  <div className="px-4 py-4 sm:px-6">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${platform.bgColor} mr-3`}>
-                          {platform.icon} {platform.name}
+                <div key={post.id} className={innerCard}>
+                  <div className="flex items-center justify-between gap-2">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <BrandAvatar name={brandMeta.name} logoUrl={brandMeta.logoUrl} size="sm" />
+                        <span className="shrink-0">
+                          <PlatformIconRow
+                            platforms={post.platform}
+                            badge
+                            iconClassName="h-3.5 w-3.5"
+                          />
                         </span>
-                        <p className="text-sm font-medium text-gray-900 dark:text-white">
+                        <p className="text-sm font-semibold text-gray-900 truncate">
                           {campaign?.name || 'No Campaign'}
                         </p>
                       </div>
-                      <div className="ml-2 flex-shrink-0 flex">
+                      <div className="shrink-0 text-right">
                         <p className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                          new Date(post.scheduledAt) < new Date()
-                            ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200'
-                            : 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200'
+                          parseApiDate(post.scheduledAt) < new Date()
+                            ? 'bg-red-100 text-red-800'
+                            : 'bg-green-100 text-green-800'
                         }`}>
                           {formatTimeLeft(post.scheduledAt)}
                         </p>
                       </div>
                     </div>
                     <div className="mt-2">
-                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                      {(() => {
+                        const imageUrl = post.media?.imageUrl || post.media?.image_url || null;
+                        const imagePrompt = post.media?.imagePrompt || post.media?.image_prompt || '';
+                        if (!imageUrl) return null;
+                        return (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setImagePreview({
+                                src: imageUrl,
+                                alt: imagePrompt || 'Scheduled post media',
+                              })
+                            }
+                            className="mb-2 inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-800 shadow-sm hover:bg-gray-50"
+                          >
+                            <Camera className="h-4 w-4" aria-hidden />
+                            View image
+                          </button>
+                        );
+                      })()}
+                      <p className="text-sm text-gray-600">
                         {post.caption}
                       </p>
                     </div>
-                    <div className="mt-2 flex items-center text-sm text-gray-500 dark:text-gray-400">
-                      <CalendarIcon className="flex-shrink-0 mr-1.5 h-5 w-5 text-gray-400" />
+                    <div className="mt-2 flex items-center text-sm text-gray-500">
+                      <Calendar className="mr-1.5 h-5 w-5 shrink-0 text-gray-400" aria-hidden />
                       <p>{nice(post.scheduledAt)}</p>
                     </div>
-                  </div>
                 </div>
               );
             })}
@@ -457,35 +654,58 @@ const Dashboard = () => {
   );
 
   // Render the analytics tab
-  const renderAnalyticsTab = () => (
-    <div className="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
-      <div className="px-4 py-5 sm:p-6">
-        <h2 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Analytics</h2>
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
-            <h3 className="text-sm font-medium text-blue-800 dark:text-blue-200">Total Campaigns</h3>
-            <p className="mt-1 text-3xl font-semibold text-blue-600 dark:text-blue-300">{campaigns.length}</p>
-          </div>
-          <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg">
-            <h3 className="text-sm font-medium text-green-800 dark:text-green-200">Scheduled Posts</h3>
-            <p className="mt-1 text-3xl font-semibold text-green-600 dark:text-green-300">{scheduled.length}</p>
-          </div>
-          <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg">
-            <h3 className="text-sm font-medium text-purple-800 dark:text-purple-200">Drafts</h3>
-            <p className="mt-1 text-3xl font-semibold text-purple-600 dark:text-purple-300">
-              {drafts.filter(d => d.status === 'draft').length}
-            </p>
-          </div>
-          <div className="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg">
-            <h3 className="text-sm font-medium text-yellow-800 dark:text-yellow-200">Active Campaigns</h3>
-            <p className="mt-1 text-3xl font-semibold text-yellow-600 dark:text-yellow-300">
-              {campaigns.filter(c => c.status === 'active').length}
-            </p>
-          </div>
+  const renderAnalyticsTab = () => {
+    const draftPostCount = filteredDrafts.filter((d) => d.status === 'draft').length;
+    const activeCampaignCount = filteredCampaigns.filter((c) => c.status === 'active').length;
+
+    const overviewCards = [
+      { label: 'Campaigns', value: filteredCampaigns.length },
+      { label: 'Active campaigns', value: activeCampaignCount },
+      { label: 'Scheduled posts', value: filteredScheduled.length },
+      { label: 'Draft posts', value: draftPostCount },
+    ];
+
+    return (
+      <div className={`${shellCard} overflow-hidden`}>
+        <div className="border-b border-gray-200 px-4 py-5 sm:px-8 sm:py-6">
+          <h2 className="text-xl font-semibold tracking-tight text-gray-900 sm:text-2xl">
+            Analytics
+          </h2>
+          <p className="mt-1 text-sm text-gray-500">
+            {!selectedBrandId
+              ? 'Select a workspace brand to see metrics for that brand.'
+              : showNoCampaignsFocus
+                ? 'Create a campaign to start seeing counts for this brand.'
+                : 'Snapshot of campaigns, drafts, and scheduled content for the selected brand.'}
+          </p>
+        </div>
+
+        <div className="px-4 py-6 sm:px-8 sm:py-8">
+          <section aria-labelledby="analytics-overview-heading">
+            <h3
+              id="analytics-overview-heading"
+              className="mb-4 text-sm font-semibold text-gray-900"
+            >
+              Overview
+            </h3>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {overviewCards.map((card) => (
+                <div
+                  key={card.label}
+                  className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-5"
+                >
+                  <p className="text-xs font-medium text-gray-500">{card.label}</p>
+                  <p className="mt-2 text-3xl font-bold tracking-tight text-gray-900">
+                    {card.value}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </section>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   // Render content based on active tab
   const renderContent = () => {
@@ -502,53 +722,173 @@ const Dashboard = () => {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+      <div className="flex min-h-[16rem] items-center justify-center">
+        <div className="h-12 w-12 animate-spin rounded-full border-2 border-gray-200 border-t-blue-600" aria-hidden />
+      </div>
+    );
+  }
+
+  if (apiBrandsLoading) {
+    return (
+      <div className="flex min-h-[16rem] items-center justify-center">
+        <div className="h-12 w-12 animate-spin rounded-full border-2 border-gray-200 border-t-blue-600" aria-hidden />
+      </div>
+    );
+  }
+
+  if (apiBrands.length === 0) {
+    return (
+      <div className="w-full space-y-6">
+        <div className={`${shellCard} p-8 sm:p-10`}>
+          <h1 className="text-2xl font-semibold tracking-tight text-gray-900 sm:text-3xl">
+            Set up your workspace
+          </h1>
+          <p className="mt-3 max-w-2xl text-sm text-gray-600 leading-relaxed sm:text-base">
+            You are not part of any brand yet. Brands group your campaigns, team, and location. Create one to get
+            started, or join an existing team if someone else is the admin.
+          </p>
+          <div className="mt-8">
+            <Link
+              to="/brands"
+              className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
+            >
+              Create a brand
+            </Link>
+          </div>
+          <div className="mt-10 border-t border-gray-200 pt-10">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-gray-600">
+                <Mail className="h-5 w-5" aria-hidden />
+              </div>
+              <div className="min-w-0">
+                <h2 className="text-base font-semibold text-gray-900">Joining an existing team?</h2>
+                <p className="mt-2 text-sm text-gray-600 leading-relaxed">
+                  Ask your brand admin to add you in Marketmind using <span className="font-medium text-gray-800">Invite by email</span> on the brand&apos;s team page. They must use the <span className="font-medium text-gray-800">same email</span> you use to sign in here (the account must exist first).
+                </p>
+                {userEmail ? (
+                  <p className="mt-4 text-xs font-medium uppercase tracking-wide text-gray-500">Your sign-in email</p>
+                ) : null}
+                {userEmail ? (
+                  <p className="mt-1 break-all rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 font-mono text-sm text-gray-900">
+                    {userEmail}
+                  </p>
+                ) : (
+                  <p className="mt-3 text-sm text-gray-500">
+                    After you sign in, your email appears here so you can copy it for your admin.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
-      {/* Tab Navigation */}
-      <div className="bg-white dark:bg-gray-800 shadow">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="border-b border-gray-200 dark:border-gray-700">
-            <nav className="-mb-px flex space-x-8">
-              {[
-                { name: 'Overview', id: 'overview', icon: ChartBarIcon },
-                { name: 'Scheduled', id: 'scheduled', icon: CalendarIcon },
-                { name: 'Analytics', id: 'analytics', icon: ChartPieIcon },
-              ].map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`${
-                    activeTab === tab.id
-                      ? 'border-blue-500 text-blue-600 dark:border-blue-400 dark:text-blue-400'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300 dark:hover:border-gray-600'
-                  } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center`}
-                >
-                  <tab.icon
-                    className={`-ml-0.5 mr-2 h-5 w-5 ${
-                      activeTab === tab.id ? 'text-blue-500 dark:text-blue-400' : 'text-gray-400 dark:text-gray-500'
-                    }`}
-                    aria-hidden="true"
-                  />
-                  {tab.name}
-                </button>
-              ))}
-            </nav>
+    <div className="w-full space-y-6">
+      <div className={`${shellCard} p-5 sm:p-6 sm:px-8`}>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0 flex-1 space-y-2">
+            <h2 className="text-lg font-semibold tracking-tight text-gray-900">Workspace brand</h2>
+            <p className="text-sm text-gray-600">
+              Select a brand to load its campaigns and posts on this dashboard. Click again to
+              deselect. To edit teams or details, use Manage brands.
+            </p>
           </div>
+          <Link
+            to="/brands"
+            className="inline-flex shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-800 shadow-sm hover:bg-gray-50"
+          >
+            Manage brands
+          </Link>
         </div>
+        <ul
+          className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
+          role="list"
+          aria-label="Workspace brands"
+        >
+            {apiBrands.map((b) => {
+              const idStr = String(b.id);
+              const isSelected = selectedBrandId === idStr;
+              return (
+                <li key={b.id}>
+                  <button
+                    type="button"
+                    onClick={() => handleBrandCardClick(b.id)}
+                    aria-pressed={isSelected}
+                    className={[
+                      'flex w-full items-start gap-3 rounded-xl border p-4 text-left shadow-sm transition-colors',
+                      isSelected
+                        ? 'border-blue-500 bg-blue-50/90 ring-2 ring-blue-500/25'
+                        : 'border-gray-200 bg-white hover:border-blue-200 hover:bg-gray-50/80',
+                    ].join(' ')}
+                  >
+                    <BrandAvatar
+                      name={b.name}
+                      logoUrl={b.logo_url}
+                      size="sm"
+                      emphasis={isSelected ? 'selected' : 'default'}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-gray-900 truncate">{b.name}</p>
+                      <p className="mt-0.5 truncate text-xs text-gray-600">
+                        <span className="font-medium text-gray-700">Type: </span>
+                        {b.businessType?.trim() || (
+                          <span className="text-amber-800">Required — set in Manage brands</span>
+                        )}
+                      </p>
+                      <p className="mt-0.5 flex items-center gap-1 text-xs text-gray-500">
+                        <MapPin className="h-3 w-3 shrink-0" aria-hidden />
+                        <span className="truncate">
+                          {b.city}, {b.country}
+                        </span>
+                      </p>
+                      <span
+                        className={[
+                          'mt-1.5 inline-flex rounded-full px-2 py-0.5 text-xs font-semibold',
+                          b.role === 'admin' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-700',
+                        ].join(' ')}
+                      >
+                        {b.role === 'admin' ? 'Admin' : 'Member'}
+                      </span>
+                    </div>
+                  </button>
+                </li>
+              );
+            })}
+        </ul>
       </div>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {renderContent()}
-      </main>
+      <div className={`${shellCard} overflow-hidden`}>
+        <nav className="flex gap-1 overflow-x-auto border-b border-gray-200 px-2 sm:px-4" aria-label="Dashboard sections">
+          {[
+            { name: 'Overview', id: 'overview', Icon: BarChart3 },
+            { name: 'Scheduled', id: 'scheduled', Icon: Calendar },
+            { name: 'Analytics', id: 'analytics', Icon: PieChart },
+          ].map(({ name, id, Icon }) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setActiveTab(id)}
+              className={`flex shrink-0 items-center gap-2 border-b-2 px-3 py-3.5 text-sm font-semibold transition-colors sm:px-4 ${
+                activeTab === id
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-800'
+              }`}
+            >
+              <Icon
+                className={`h-5 w-5 shrink-0 ${activeTab === id ? 'text-blue-600' : 'text-gray-400'}`}
+                aria-hidden
+              />
+              {name}
+            </button>
+          ))}
+        </nav>
+      </div>
 
-      {/* Scheduling Modal */}
+      <div>{renderContent()}</div>
+
       <ScheduleModal
         isOpen={!!schedulingDraftId}
         onClose={() => setSchedulingDraftId(null)}
@@ -557,6 +897,21 @@ const Dashboard = () => {
         setScheduleDate={setScheduleDate}
         isScheduling={isScheduling}
       />
+      {imagePreview ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="relative w-full max-w-5xl rounded-xl bg-white p-3 shadow-xl">
+            <button
+              type="button"
+              onClick={() => setImagePreview(null)}
+              className="absolute right-3 top-3 inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+              aria-label="Close image preview"
+            >
+              <X className="h-4 w-4" aria-hidden />
+            </button>
+            <img src={imagePreview.src} alt={imagePreview.alt} className="max-h-[80vh] w-full rounded-lg object-contain" />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };

@@ -1,0 +1,21 @@
+# Dependencies
+/node_modules
+
+# Environment variables
+.env
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Uploaded brand logos (filenames are brand ObjectIds)
+uploads/brand-logos/*
+!uploads/brand-logos/.gitkeep

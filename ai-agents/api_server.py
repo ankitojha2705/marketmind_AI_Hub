@@ -1,14 +1,10 @@
-"""
-REST API Server for Marketing Orchestrator
-Wraps the orchestrator functionality for frontend integration
-"""
+"""REST API server for Marketing Orchestrator."""
 import os
 import sys
-import json
 import logging
 import time
 from pathlib import Path
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from dotenv import load_dotenv
 
@@ -17,12 +13,12 @@ agents_dir = Path(__file__).parent / "agents"
 if str(agents_dir) not in sys.path:
     sys.path.insert(0, str(agents_dir))
 
-# Import orchestrator functions
-from nl_parser import parse_user_input
 from Orchestrator import (
+    run_step2_analysis,
+    run_step3_generation,
     process_campaign_request,
     create_final_instagram_post,
-    format_response_for_ui
+    format_response_for_ui,
 )
 
 # Configure logging
@@ -38,6 +34,8 @@ load_dotenv()
 # Create Flask app
 app = Flask(__name__)
 CORS(app, origins=["http://localhost:5173", "http://localhost:3000"])
+GENERATED_IMAGES_DIR = Path(__file__).parent / "generated-images"
+GENERATED_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 
 # Mock context for orchestrator (since we're not using uAgents protocol)
 class MockContext:
@@ -51,132 +49,113 @@ def health_check():
     """Health check endpoint"""
     return jsonify({"status": "healthy", "service": "Marketing Orchestrator API"})
 
-# Fix: process_campaign_request needs to be async but we're calling it synchronously
-# We need to create a sync wrapper
+
+@app.route('/generated-images/<path:filename>', methods=['GET'])
+def serve_generated_image(filename: str):
+    return send_from_directory(GENERATED_IMAGES_DIR, filename)
+
 import asyncio
 
-def process_campaign_request_sync(ctx, business_type, location, campaign_goals, request_id):
-    """Synchronous wrapper for async process_campaign_request"""
+
+def _run_async(coro):
     try:
         loop = asyncio.get_event_loop()
     except RuntimeError:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-    
-    return loop.run_until_complete(
-        process_campaign_request(ctx, business_type, location, campaign_goals, request_id)
-    )
+    return loop.run_until_complete(coro)
 
-@app.route('/api/generate-campaign', methods=['POST'])
-@app.route('/api/generate-campaign', methods=['POST'])
-def generate_campaign():
-    """
-    Generate Instagram campaign from user prompt
-    
-    Request body:
-    {
-        "prompt": "I have a coffee shop in LA, I want to share a post for instagram for christmas..."
-    }
-    
-    Response:
-    {
-        "success": true,
-        "data": {
-            "caption": "...",
-            "hashtags": [...],
-            "post_type": "Reel",
-            "image_url": "...",
-            "seo_score": 90,
-            ...
-        },
-        "formatted_markdown": "...",
-        "processing_time": 44.7
-    }
-    """
+
+@app.route('/api/step2/analyze', methods=['POST'])
+def step2_analyze():
     try:
         data = request.get_json()
-        if not data or 'prompt' not in data:
-            return jsonify({
-                "success": False,
-                "error": "Missing 'prompt' in request body"
-            }), 400
-        
-        user_prompt = data['prompt']
-        logger.info(f"Received campaign generation request: {user_prompt[:100]}...")
-        
-        # Parse user input
-        try:
-            payload = parse_user_input(user_prompt)
-            logger.info(f"Parsed payload: {json.dumps(payload, indent=2)}")
-        except Exception as e:
-            logger.error(f"Failed to parse user input: {e}")
-            return jsonify({
-                "success": False,
-                "error": f"Failed to parse prompt: {str(e)}"
-            }), 400
-        
-        # Extract campaign parameters
-        business_type = payload.get('business_type')
-        location = payload.get('location')
-        campaign_goals = payload.get('campaign_goals')
-        
-        if not business_type or not campaign_goals:
-            return jsonify({
-                "success": False,
-                "error": "Could not extract business_type and campaign_goals from prompt"
-            }), 400
-        
-        # Generate request ID
-        request_id = f"api_req_{int(time.time())}"
-        
-        # Track processing time
+        if not data or not isinstance(data.get("campaign"), dict):
+            return jsonify({"success": False, "error": "Missing campaign payload"}), 400
+        request_id = f"analyze_{int(time.time())}"
         start_time = time.time()
-        
-        # Create mock context
         ctx = MockContext()
-        
-        # Process campaign through all agents (using sync wrapper)
-        logger.info(f"[{request_id}] Starting campaign processing...")
-        analysis_data, competitor_data, content_data, seo_data = process_campaign_request_sync(
-            ctx, business_type, location, campaign_goals, request_id
+        analysis_data = _run_async(
+            run_step2_analysis(ctx, data, request_id)
         )
-        
-        # Calculate processing time
         processing_time = time.time() - start_time
-        
-        # Count competitors
-        competitor_count = 0
-        if isinstance(competitor_data, dict) and competitor_data.get('competitors'):
-            competitor_count = len(competitor_data.get('competitors', []))
-        
-        # Create final Instagram post
-        logger.info(f"[{request_id}] Consolidating final Instagram post...")
-        final_post = create_final_instagram_post(analysis_data, content_data, seo_data)
-        
-        # Format response for UI
-        formatted_markdown = format_response_for_ui(
-            final_post, analysis_data, content_data, seo_data,
-            processing_time=processing_time,
-            competitor_count=competitor_count
-        )
-        
-        logger.info(f"[{request_id}] Campaign generation completed in {processing_time:.1f}s")
-        
-        # Return response
         return jsonify({
             "success": True,
-            "data": final_post,
-            "formatted_markdown": formatted_markdown,
+            "analysis": analysis_data,
             "processing_time": processing_time,
-            "request_id": request_id
+            "request_id": request_id,
         })
-        
     except Exception as e:
-        logger.error(f"Error processing campaign request: {e}", exc_info=True)
+        logger.error("Error processing step2 analysis request: %s", e, exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/step3/generate', methods=['POST'])
+def step3_generate():
+    try:
+        data = request.get_json()
+        if not data or not isinstance(data.get("campaign"), dict):
+            return jsonify({"success": False, "error": "Missing campaign payload"}), 400
+        if not isinstance(data.get("analysis"), dict):
+            return jsonify({"success": False, "error": "Missing analysis payload"}), 400
+
+        request_id = f"generate_{int(time.time())}"
+        start_time = time.time()
+        ctx = MockContext()
+        result = _run_async(run_step3_generation(ctx, data, request_id))
+        processing_time = time.time() - start_time
+
         return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
+            "success": True,
+            "data": result,
+            "processing_time": processing_time,
+            "request_id": request_id,
+        })
+    except Exception as e:
+        logger.error("Error processing step3 generation request: %s", e, exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/generate-campaign', methods=['POST'])
+def generate_campaign_legacy():
+    """Legacy single-shot endpoint retained for manual debugging."""
+    try:
+        data = request.get_json()
+        business_type = data.get("business_type")
+        location = data.get("location")
+        campaign_goals = data.get("campaign_goals")
+        if not business_type or not campaign_goals:
+            return jsonify({"success": False, "error": "Missing business_type or campaign_goals"}), 400
+
+        request_id = f"legacy_{int(time.time())}"
+        start_time = time.time()
+        ctx = MockContext()
+        analysis_data, competitor_data, content_data, seo_data = _run_async(
+            process_campaign_request(ctx, business_type, location, campaign_goals, request_id)
+        )
+        processing_time = time.time() - start_time
+        competitor_count = len(competitor_data.get("competitors", [])) if isinstance(competitor_data, dict) else 0
+        final_post = create_final_instagram_post(analysis_data, content_data, seo_data)
+        formatted_markdown = format_response_for_ui(
+            final_post,
+            analysis_data,
+            content_data,
+            seo_data,
+            processing_time=processing_time,
+            competitor_count=competitor_count,
+        )
+        return jsonify(
+            {
+                "success": True,
+                "data": final_post,
+                "formatted_markdown": formatted_markdown,
+                "processing_time": processing_time,
+                "request_id": request_id,
+            }
+        )
+    except Exception as e:
+        logger.error("Error processing legacy request: %s", e, exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
 
 if __name__ == '__main__':
     port = int(os.getenv('API_PORT', '8001'))

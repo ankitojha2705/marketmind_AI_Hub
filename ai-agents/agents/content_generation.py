@@ -3,25 +3,61 @@ Content Generation Agent: Produces Instagram-ready content using analysis insigh
 """
 from crewai import Agent, Task
 from langchain_openai import ChatOpenAI
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import List, Optional, Dict
 import json
 import os
 import logging
+from pathlib import Path
+from urllib.parse import urlparse
+from uuid import uuid4
+
+import requests
 
 logger = logging.getLogger(__name__)
+GENERATED_IMAGES_DIR = Path(__file__).resolve().parents[1] / "generated-images"
+
+
+class GeneratedPost(BaseModel):
+    schedule_seq: int = Field(description="1-based schedule sequence id")
+    platform: str = Field(description="Target platform")
+    scheduled_at: str = Field(description="Planned publish datetime ISO string")
+    focus: str = Field(description="Content focus for this post")
+    caption: str = Field(description="Primary post caption")
+    hashtags: List[str] = Field(default_factory=list, description="Relevant hashtags for this post")
+    post_type: str = Field(description="Recommended post type: Reel | Story | Carousel | Photo")
+    call_to_action: str = Field(description="Call to action")
+    media_prompts: List[str] = Field(default_factory=list, description="Media prompts for this post")
+    image_prompt: Optional[str] = Field(default=None, description="Image prompt for generation")
+    image_url: Optional[str] = Field(default=None, description="Generated image URL")
+    notes: Optional[str] = Field(default=None, description="Optional notes")
+
+    @model_validator(mode="after")
+    def backfill_hashtags_from_caption(self):
+        # Some model outputs omit hashtags array; recover from caption tags when possible.
+        if self.hashtags:
+            return self
+        if not self.caption:
+            return self
+        extracted = []
+        seen = set()
+        for token in self.caption.replace("\n", " ").split():
+            if not token.startswith("#"):
+                continue
+            tag = token.strip(".,!?;:()[]{}\"'`")
+            if len(tag) <= 1:
+                continue
+            norm = tag.lower()
+            if norm in seen:
+                continue
+            seen.add(norm)
+            extracted.append(tag)
+        self.hashtags = extracted
+        return self
 
 
 class ContentOutput(BaseModel):
-    caption: str = Field(description="Primary Instagram caption text")
-    hashtags: List[str] = Field(description="List of relevant hashtags")
-    post_type: str = Field(description="Recommended post type: Reel | Story | Carousel | Photo")
-    call_to_action: str = Field(description="Clear CTA for users")
-    suggested_post_time: Optional[str] = Field(default=None, description="Suggested time to post (HH:MM)")
-    media_prompts: List[str] = Field(default_factory=list, description="Prompts/ideas for images or short videos")
-    image_prompt: Optional[str] = Field(default=None, description="Detailed prompt for DALL-E image generation")
-    image_url: Optional[str] = Field(default=None, description="URL of generated image from DALL-E")
-    notes: Optional[str] = Field(default=None, description="Additional implementation notes for the marketer")
+    posts: List[GeneratedPost] = Field(default_factory=list, description="Generated posts")
 
 
 class ContentAgentConfig:
@@ -53,10 +89,9 @@ class ContentAgentConfig:
         campaign_goals: str,
         analysis: Dict,
     ) -> Task:
-        """Create the generation task informed by analysis and competitor data"""
-        """Create the generation task informed by analysis"""
+        """Create the generation task informed by analysis and competitor data."""
         target_audience = analysis.get("target_audience", "local audience")
-        engagement_times = analysis.get("engagement_times", [])
+        schedule_plan = analysis.get("schedule_plan", [])
         content_tone = analysis.get("content_tone", "friendly")
         competitor_themes = analysis.get("competitor_themes", [])
         competitor_hashtags = analysis.get("competitor_hashtags", [])
@@ -64,13 +99,13 @@ class ContentAgentConfig:
         price_point = analysis.get("suggested_price_point", "")
 
         task_description = f"""
-        Using the insights below, generate a single Instagram-ready post.
+        Using the insights below, generate one post per schedule entry.
 
         Business Type: {business_type}
         Campaign Goal: {campaign_goals}
 
         Audience Insight: {target_audience}
-        Engagement Times: {', '.join(engagement_times) if engagement_times else 'not specified'}
+        Schedule Plan: {json.dumps(schedule_plan)}
         Recommended Tone: {content_tone}
 
         Market Context:
@@ -79,28 +114,38 @@ class ContentAgentConfig:
         - Price Point: {price_point}
 
         Requirements:
-        - Produce a concise, engaging caption matching the tone
-        - Include a clear call-to-action aligned with the goal
-        - Recommend the best post type (Reel | Story | Carousel | Photo) for this content
-        - Provide 10-15 relevant, non-spammy hashtags (no banned hashtags)
-          Consider these competitor hashtags: {', '.join(competitor_hashtags) if competitor_hashtags else 'Not available'}
-        - Suggest 2-4 media prompts (image or short reel ideas)
-        - Create a detailed image_prompt for DALL-E image generation (describe the visual: colors, composition, mood, key elements)
-          Example: "A beautifully styled latte with latte art next to a plate of fresh chocolate chip cookies on a wooden table, warm natural lighting, cozy cafe atmosphere, Instagram-worthy food photography style"
-        - If engagement times are provided, pick one as suggested_post_time
+        - Generate exactly one post per schedule_plan entry (same seq as provided)
+        - Tailor each post to that entry's focus and platform
+        - Produce concise, engaging caption matching the tone
+        - Include clear call-to-action aligned with the goal
+        - Recommend post type (Reel | Story | Carousel | Photo)
+        - Provide 10-15 relevant non-spammy hashtags
+        - Suggest 2-4 media prompts
+        - Provide image_prompt for each post
+        - Image prompts must produce visuals with NO readable text anywhere
+        - Do not include words, letters, captions, logos, watermarks, labels, menus, packaging text, or signage text in the scene
+        - Prefer clean compositions focused on products/people/environment without typography
+        - Keep schedule metadata from schedule_plan in output
         - Avoid ALL caps and excessive emojis; use at most 1-2 where appropriate
         - Position content uniquely against competitors while staying authentic
 
         Return a JSON object matching this schema exactly:
         {{
-          "caption": "string",
-          "hashtags": ["#tag1", "#tag2", ...],
-          "post_type": "Reel|Story|Carousel|Photo",
-          "call_to_action": "string",
-          "suggested_post_time": "HH:MM" | null,
-          "media_prompts": ["prompt1", "prompt2"],
-          "image_prompt": "detailed description for DALL-E image generation",
-          "notes": "optional string"
+          "posts": [
+            {{
+              "schedule_seq": 1,
+              "platform": "instagram",
+              "scheduled_at": "2026-01-15T18:00:00Z",
+              "focus": "post focus",
+              "caption": "string",
+              "hashtags": ["#tag1", "#tag2"],
+              "post_type": "Reel|Story|Carousel|Photo",
+              "call_to_action": "string",
+              "media_prompts": ["prompt1", "prompt2"],
+              "image_prompt": "detailed description for DALL-E image generation",
+              "notes": "optional string"
+            }}
+          ]
         }}
         """
 
@@ -108,10 +153,45 @@ class ContentAgentConfig:
             description=task_description,
             agent=agent,
             expected_output=(
-                "A JSON object containing: caption, hashtags[], post_type, call_to_action, "
-                "suggested_post_time, media_prompts[], image_prompt (detailed description for DALL-E), notes"
+                "A JSON object containing posts[] where each item includes schedule_seq, platform, "
+                "scheduled_at, focus, caption, hashtags, post_type, call_to_action, media_prompts, image_prompt, notes"
             ),
         )
+
+
+def _infer_ext(image_url: str, content_type: str | None) -> str:
+    if content_type:
+        ct = content_type.lower()
+        if "png" in ct:
+            return ".png"
+        if "jpeg" in ct or "jpg" in ct:
+            return ".jpg"
+        if "webp" in ct:
+            return ".webp"
+    parsed = urlparse(image_url)
+    suffix = Path(parsed.path).suffix.lower()
+    if suffix in {".png", ".jpg", ".jpeg", ".webp"}:
+        return suffix
+    return ".png"
+
+
+def save_image_locally(image_url: str) -> Optional[str]:
+    """
+    Download generated image to local storage and return a stable served URL.
+    """
+    try:
+        GENERATED_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+        resp = requests.get(image_url, timeout=20)
+        resp.raise_for_status()
+        ext = _infer_ext(image_url, resp.headers.get("content-type"))
+        filename = f"{uuid4().hex}{ext}"
+        path = GENERATED_IMAGES_DIR / filename
+        path.write_bytes(resp.content)
+        public_base = os.getenv("AGENTS_PUBLIC_BASE_URL", "http://localhost:8001").rstrip("/")
+        return f"{public_base}/generated-images/{filename}"
+    except Exception as e:
+        logger.error("Failed to persist generated image locally: %s", e)
+        return None
 
 
 def generate_instagram_image(image_prompt: str, business_type: str, api_key: Optional[str] = None) -> Optional[str]:
@@ -145,7 +225,11 @@ def generate_instagram_image(image_prompt: str, business_type: str, api_key: Opt
         )
         
         image_url = response.data[0].url
-        logger.info(f"✓ Image generated successfully: {image_url}")
+        stable_url = save_image_locally(image_url)
+        if stable_url:
+            logger.info("✓ Image generated and saved locally: %s", stable_url)
+            return stable_url
+        logger.warning("Image generated but local save failed; returning temporary URL")
         return image_url
         
     except Exception as e:
@@ -160,18 +244,7 @@ def parse_content_output(raw_output: str) -> ContentOutput:
     if start_idx != -1 and end_idx > start_idx:
         data = json.loads(raw_output[start_idx:end_idx])
         return ContentOutput(**data)
-    # Minimal safe fallback
-    return ContentOutput(
-        caption="Try our latest offer today!",
-        hashtags=["#local", "#food", "#instagood"],
-        post_type="Photo",
-        call_to_action="Visit us today and mention this post.",
-        suggested_post_time=None,
-        media_prompts=["Close-up of product", "Customer enjoying the item"],
-        image_prompt=None,
-        image_url=None,
-        notes="Fallback content used due to parsing issue.",
-    )
+    return ContentOutput(posts=[])
 
 
 def run_content_agent(
@@ -213,32 +286,22 @@ def run_content_agent(
     result = crew.kickoff()
     content_output = parse_content_output(str(result))
     
-    # Generate image if image_prompt is available
-    if content_output.image_prompt:
-        logger.info("Generating Instagram image with DALL-E...")
+    for i, post in enumerate(content_output.posts):
+        prompt = post.image_prompt or (post.media_prompts[0] if post.media_prompts else None)
+        if not prompt:
+            continue
+        logger.info("Generating Instagram image with DALL-E for schedule_seq=%s...", post.schedule_seq)
         image_url = generate_instagram_image(
-            image_prompt=content_output.image_prompt,
+            image_prompt=prompt,
             business_type=business_type,
-            api_key=api_key
+            api_key=api_key,
         )
         if image_url:
-            content_output.image_url = image_url
-            logger.info("✓ Image generated and added to content output")
+            content_output.posts[i].image_url = image_url
+            if not content_output.posts[i].image_prompt:
+                content_output.posts[i].image_prompt = prompt
         else:
-            logger.warning("⚠ Image generation failed, continuing without image")
-    else:
-        # Fallback: try to generate from first media_prompt if available
-        if content_output.media_prompts and len(content_output.media_prompts) > 0:
-            logger.info("No image_prompt provided, generating from first media_prompt...")
-            image_url = generate_instagram_image(
-                image_prompt=content_output.media_prompts[0],
-                business_type=business_type,
-                api_key=api_key
-            )
-            if image_url:
-                content_output.image_url = image_url
-                content_output.image_prompt = content_output.media_prompts[0]
-                logger.info("✓ Image generated from media_prompt")
+            logger.warning("⚠ Image generation failed for schedule_seq=%s", post.schedule_seq)
     
     return content_output
 

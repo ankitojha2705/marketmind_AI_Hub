@@ -94,7 +94,7 @@ Marketing-Orchestator/
 
 ### Prerequisites
 
-- Python 3.8+
+- **Python 3.11** (recommended for this repo; matches typical team / CMPE 295 setup). **3.8+** is generally supported if dependencies still resolve.
 - OpenAI API key
 - Yelp Fusion API key (for competitor research)
 - Fetch.ai Agentverse account (optional, for ASI1 UI)
@@ -108,15 +108,46 @@ Marketing-Orchestator/
    ```
 
 2. **Create virtual environment**
+
+   **macOS / Linux**
    ```bash
    python3 -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   source venv/bin/activate
+   ```
+
+   **Windows — Command Prompt (cmd.exe), from the `ai-agents` folder**
+   ```bat
+   cd path\to\marketmind_AI_Hub\ai-agents
+   py -3.11 -m venv venv
+   venv\Scripts\activate.bat
+   ```
+   To see which runtimes the `py` launcher knows about: `py -0`. If you do not use the launcher, `python -m venv venv` is fine as long as `python --version` shows **3.11** (or another supported version).
+   After activation, your prompt should start with `(venv)`. Use **`python`** and **`python -m pip`** so packages install into this venv (not another Python on PATH).
+
+   **Windows — PowerShell**
+   ```powershell
+   cd path\to\marketmind_AI_Hub\ai-agents
+   python -m venv venv
+   .\venv\Scripts\Activate.ps1
    ```
 
 3. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
+
+   Always use **`python -m pip`** while the venv is active:
+
+   ```bat
+   python -m pip install -U pip setuptools
+   python -m pip install -r requirements.txt
    ```
+
+   **If you see `No module named 'pkg_resources'`** when calling the API: CrewAI/LangChain still need `pkg_resources` from setuptools. With the venv activated, reinstall with the version bound from `requirements.txt` (**setuptools 82+ removed `pkg_resources`**):
+
+   ```bat
+   python -m pip install "setuptools>=69,<82"
+   python -c "import pkg_resources; print('pkg_resources OK')"
+   ```
+
+   Then start the API again with **`python api_server.py`** (not a different `python` from outside the venv).
 
 4. **Set up environment variables**
    
@@ -140,6 +171,16 @@ Marketing-Orchestator/
    python fetch_setup.py
    ```
    Choose option 1 to generate a new seed phrase, then add it to your `.env` file.
+
+### Running the REST API (MarketMind frontend)
+
+From the **`ai-agents`** folder, with **venv activated** (Windows CMD: `venv\Scripts\activate.bat`):
+
+```bat
+python api_server.py
+```
+
+Use the same **`python`** that shows when you run `where python` after activation (it should be `...\ai-agents\venv\Scripts\python.exe`).
 
 ### Running the Orchestrator
 

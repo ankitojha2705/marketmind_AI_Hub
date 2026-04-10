@@ -20,7 +20,7 @@ useEffect(() => {
       }
 
       // Validate token and fetch user data
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5001'}/api/auth/me`, {
+      const response = await fetch(`${authService.API_URL}/auth/me`, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
@@ -71,8 +71,7 @@ useEffect(() => {
 
 
   const loginWithGoogle = () => {
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
-    window.location.href = `${apiUrl}/api/auth/google`;
+    window.location.href = `${authService.API_URL}/auth/google`;
   };
 
   const logout = () => {
@@ -94,7 +93,7 @@ useEffect(() => {
         setUser,
       }}
     >
-      {!loading && children}
+      {children}
     </AuthContext.Provider>
   );
 };

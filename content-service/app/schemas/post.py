@@ -59,5 +59,7 @@ class PostOut(BaseModel):
     callToAction: str
     seo: dict[str, Any]
     media: dict[str, Any]
+    status: str
+    publishedAt: datetime | None = None
     createdAt: datetime
     updatedAt: datetime

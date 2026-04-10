@@ -200,7 +200,19 @@ export default function CampaignNew() {
     setLoadingCampaign(true);
     try {
       const c = await fetchContentCampaign(selectedBrandId, campaignId);
-      const normalizedStatus = (c.status || 'draft').toLowerCase();
+      let normalizedStatus = (c.status || 'draft').toLowerCase();
+      if (normalizedStatus === 'scheduled' && c.startDate) {
+        try {
+          const campaignStartLocal = format(new Date(c.startDate), 'yyyy-MM-dd');
+          const todayLocal = format(new Date(), 'yyyy-MM-dd');
+          if (campaignStartLocal <= todayLocal) {
+            await updateContentCampaign(selectedBrandId, campaignId, { status: 'active' });
+            normalizedStatus = 'active';
+          }
+        } catch {
+          // If date parsing/update fails, keep original status and continue.
+        }
+      }
       setCampaignStatus(normalizedStatus);
       if (normalizedStatus === 'cancelled') {
         toast.error('Cancelled campaigns cannot be opened');
@@ -500,7 +512,26 @@ export default function CampaignNew() {
           <div className="flex items-center justify-center">
             <h1 className="text-2xl font-semibold tracking-tight text-gray-900">{name || 'Campaign details'}</h1>
           </div>
-          <div className="flex items-center justify-center">
+          <div className="flex items-center justify-between border-b border-gray-200">
+            <nav className="flex gap-1" aria-label="Campaign read-only sections">
+              {[
+                { name: 'Posts', id: 'posts' },
+                { name: 'Details', id: 'details' },
+              ].map(({ name: tabName, id }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setReadOnlyTab(id)}
+                  className={`flex shrink-0 items-center border-b-2 px-3 py-3.5 text-sm font-semibold transition-colors sm:px-4 ${
+                    readOnlyTab === id
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-800'
+                  }`}
+                >
+                  {tabName}
+                </button>
+              ))}
+            </nav>
             <span
               className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${
                 campaignStatus === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-indigo-100 text-indigo-800'
@@ -508,26 +539,6 @@ export default function CampaignNew() {
             >
               {campaignStatus === 'active' ? 'Active' : 'Completed'}
             </span>
-          </div>
-          <div className="mx-auto flex w-full max-w-md items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white p-1">
-            <button
-              type="button"
-              onClick={() => setReadOnlyTab('posts')}
-              className={`rounded-md px-4 py-2 text-sm font-semibold ${
-                readOnlyTab === 'posts' ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-100'
-              }`}
-            >
-              Posts
-            </button>
-            <button
-              type="button"
-              onClick={() => setReadOnlyTab('details')}
-              className={`rounded-md px-4 py-2 text-sm font-semibold ${
-                readOnlyTab === 'details' ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-100'
-              }`}
-            >
-              Details
-            </button>
           </div>
 
           {readOnlyTab === 'posts' ? (
@@ -537,19 +548,49 @@ export default function CampaignNew() {
               ) : (
                 (posts || []).map((p) => (
                   <div key={p.id} className="space-y-3 rounded-xl border border-gray-200 p-4">
-                    <p className="text-sm font-medium text-gray-900">
-                      Post {p.scheduleSeq} ·{' '}
-                      {(() => {
-                        const pid = String(p.platform || '').toLowerCase();
-                        const Icon = platformIconMap[pid];
-                        return Icon ? (
-                          <Icon className="inline h-4 w-4 align-text-bottom text-gray-700" aria-hidden />
-                        ) : (
-                          pid || '—'
-                        );
-                      })()}{' '}
-                      · {p.scheduledAt ? format(new Date(p.scheduledAt), 'MMM d, yyyy h:mm a') : '—'}
-                    </p>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-sm font-medium text-gray-900">
+                        Post {p.scheduleSeq} ·{' '}
+                        {(() => {
+                          const pid = String(p.platform || '').toLowerCase();
+                          const Icon = platformIconMap[pid];
+                          return Icon ? (
+                            <Icon className="inline h-4 w-4 align-text-bottom text-gray-700" aria-hidden />
+                          ) : (
+                            pid || '—'
+                          );
+                        })()}{' '}
+                        · {p.scheduledAt ? format(new Date(p.scheduledAt), 'MMM d, yyyy h:mm a') : '—'}
+                      </p>
+                      {campaignStatus === 'active' ? (
+                        <span
+                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${
+                            String(p.status || 'scheduled').toLowerCase() === 'success'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : String(p.status || 'scheduled').toLowerCase() === 'processing'
+                                ? 'bg-amber-100 text-amber-800'
+                                : String(p.status || 'scheduled').toLowerCase() === 'failed'
+                                  ? 'bg-red-100 text-red-800'
+                                  : 'bg-blue-100 text-blue-800'
+                          }`}
+                        >
+                          {String(p.status || 'scheduled').toLowerCase() === 'success'
+                            ? 'Published'
+                            : String(p.status || 'scheduled').toLowerCase() === 'processing'
+                              ? 'Publishing'
+                              : String(p.status || 'scheduled').toLowerCase() === 'failed'
+                                ? 'Failed'
+                                : 'Scheduled'}
+                        </span>
+                      ) : null}
+                    </div>
+                    {campaignStatus === 'active' &&
+                    String(p.status || 'scheduled').toLowerCase() === 'success' &&
+                    p.publishedAt ? (
+                      <p className="text-xs font-medium text-emerald-700">
+                        Published at {format(new Date(p.publishedAt), 'MMM d, yyyy h:mm a')}
+                      </p>
+                    ) : null}
                     {(() => {
                       const imageUrl = p.media?.imageUrl || p.media?.image_url || null;
                       const imagePrompt = p.media?.imagePrompt || p.media?.image_prompt || '';

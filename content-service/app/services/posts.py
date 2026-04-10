@@ -34,6 +34,8 @@ def _post_doc_to_out(doc: dict[str, Any]) -> PostOut:
         callToAction=doc.get("callToAction") or "",
         seo=doc.get("seo") or {},
         media=doc.get("media") or {},
+        status=doc.get("status") or "scheduled",
+        publishedAt=doc.get("publishedAt"),
         createdAt=doc["createdAt"],
         updatedAt=doc["updatedAt"],
     )
@@ -91,6 +93,7 @@ async def create_post(
         "callToAction": (body.callToAction or "").strip(),
         "seo": body.seo or {},
         "media": body.media or {},
+        "status": "scheduled",
         "createdAt": now,
         "updatedAt": now,
     }
@@ -119,9 +122,13 @@ async def list_posts_for_brand(
     db: AsyncIOMotorDatabase,
     *,
     brand_id: str,
+    status: str | None = None,
 ) -> list[PostOut]:
     brand_oid = _to_obj_id(brand_id, detail="Invalid brand id")
-    cursor = db.posts.find({"brand": brand_oid}).sort([("scheduledAt", 1), ("createdAt", -1)])
+    query: dict[str, Any] = {"brand": brand_oid}
+    if status:
+        query["status"] = status.strip().lower()
+    cursor = db.posts.find(query).sort([("scheduledAt", 1), ("createdAt", -1)])
     out: list[PostOut] = []
     async for doc in cursor:
         out.append(_post_doc_to_out(doc))

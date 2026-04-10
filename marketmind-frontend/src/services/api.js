@@ -34,7 +34,7 @@ export function brandLogoSrc(logoUrl) {
 const api = axios.create({
   baseURL: API_URL,
   headers: {
-    'Content-Type': 'application/json',
+    'Content-Type`': 'application/json',
   },
 });
 
@@ -192,9 +192,12 @@ export const fetchCampaignPosts = async (brandId, campaignId) => {
   return data;
 };
 
-/** @param {string} brandId */
-export const fetchBrandPosts = async (brandId) => {
-  const { data } = await contentApi.get(`/api/brands/${brandId}/posts`);
+/** @param {string} brandId @param {{ status?: string }} [opts] */
+export const fetchBrandPosts = async (brandId, opts = {}) => {
+  const { status } = opts;
+  const { data } = await contentApi.get(`/api/brands/${brandId}/posts`, {
+    params: status ? { status } : undefined,
+  });
   return data;
 };
 

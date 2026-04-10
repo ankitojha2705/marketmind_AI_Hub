@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
-  BookOpen,
   Building2,
   Calendar,
   ChevronDown,
@@ -26,7 +25,6 @@ const mainNavItems = [
   { to: '/brands', label: 'Brands', Icon: Building2 },
   { to: '/campaigns', label: 'Campaigns', Icon: Megaphone },
   { to: '/calendar', label: 'Calendar', Icon: Calendar },
-  { to: '/library', label: 'Library', Icon: BookOpen },
 ];
 
 export default function NavBar() {

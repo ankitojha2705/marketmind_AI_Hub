@@ -16,6 +16,7 @@ import {
   updateContentCampaign,
 } from '../services/api';
 import { PlatformIconRow } from '../components/PlatformIcon';
+import BrandAvatar from '../components/BrandAvatar';
 import { getDashboardBrandId, setDashboardBrandId } from '../utils/dashboardBrandStorage';
 
 const shellCard =
@@ -260,6 +261,9 @@ export default function CampaignNew() {
     }
   };
 
+  const selectedBrand = brands.find((b) => String(b.id) === String(selectedBrandId));
+  const selectedBrandName = selectedBrand?.name ?? '—';
+
   if (brandsLoading) {
     return (
       <div className="flex min-h-[16rem] items-center justify-center">
@@ -311,11 +315,17 @@ export default function CampaignNew() {
         <label htmlFor="campaign-brand-load" className="mt-6 mb-1 block text-sm font-medium text-gray-700">
           Brand
         </label>
-        <select
+        <div className="mt-1 flex items-center gap-3">
+          <BrandAvatar
+            name={selectedBrand?.name ?? ''}
+            logoUrl={selectedBrand?.logo_url}
+            size="md"
+          />
+          <select
           id="campaign-brand-load"
           value={selectedBrandId}
           onChange={(e) => handleBrandChange(e.target.value)}
-          className={inputClass}
+          className={`${inputClass} min-w-0 flex-1`}
         >
           <option value="">Select a brand…</option>
           {brands.map((b) => (
@@ -324,6 +334,7 @@ export default function CampaignNew() {
             </option>
           ))}
         </select>
+        </div>
         <Link to="/campaigns" className="mt-6 inline-block text-sm font-semibold text-blue-600">
           Back to campaigns
         </Link>
@@ -353,11 +364,17 @@ export default function CampaignNew() {
         <label htmlFor="campaign-brand-retry" className="mt-4 mb-1 block text-sm font-medium text-gray-700">
           Brand
         </label>
-        <select
+        <div className="mt-1 flex max-w-md items-center gap-3">
+          <BrandAvatar
+            name={selectedBrand?.name ?? ''}
+            logoUrl={selectedBrand?.logo_url}
+            size="md"
+          />
+          <select
           id="campaign-brand-retry"
           value={selectedBrandId}
           onChange={(e) => handleBrandChange(e.target.value)}
-          className={`${inputClass} max-w-md`}
+          className={`${inputClass} min-w-0 flex-1`}
         >
           {brands.map((b) => (
             <option key={b.id} value={String(b.id)}>
@@ -365,6 +382,7 @@ export default function CampaignNew() {
             </option>
           ))}
         </select>
+        </div>
         <Link to="/campaigns" className="mt-6 mr-6 inline-block text-sm font-semibold text-blue-600">
           Back to campaigns
         </Link>
@@ -406,14 +424,18 @@ export default function CampaignNew() {
     }
   };
 
-  const selectedBrandName =
-    brands.find((b) => String(b.id) === String(selectedBrandId))?.name ?? '—';
-
   const readOnlyFields = (
     <div className="mt-6 space-y-4 text-sm">
       <div>
         <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Brand</p>
-        <p className="mt-1 font-semibold text-gray-900">{selectedBrandName}</p>
+        <div className="mt-1 flex items-center gap-2">
+          <BrandAvatar
+            name={selectedBrand?.name ?? selectedBrandName}
+            logoUrl={selectedBrand?.logo_url}
+            size="md"
+          />
+          <p className="font-semibold text-gray-900">{selectedBrandName}</p>
+        </div>
       </div>
       <div>
         <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Campaign</p>
@@ -566,12 +588,18 @@ export default function CampaignNew() {
         <label htmlFor="campaign-brand" className="mb-1 block text-sm font-medium text-gray-700">
           Brand <span className="text-red-500">*</span>
         </label>
-        <select
+        <div className="mt-1 flex items-center gap-3">
+          <BrandAvatar
+            name={selectedBrand?.name ?? ''}
+            logoUrl={selectedBrand?.logo_url}
+            size="md"
+          />
+          <select
           id="campaign-brand"
           value={selectedBrandId}
           onChange={(e) => handleBrandChange(e.target.value)}
           disabled={brandsLoading || (isEdit && (editBrandLocked || loadingCampaign))}
-          className={inputClass}
+          className={`${inputClass} min-w-0 flex-1`}
         >
           {brands.map((b) => (
             <option key={b.id} value={String(b.id)}>
@@ -579,6 +607,7 @@ export default function CampaignNew() {
             </option>
           ))}
         </select>
+        </div>
         <p className="mt-1 text-xs text-gray-500">
           {isEdit && editBrandLocked
             ? 'Campaigns cannot be moved between brands.'

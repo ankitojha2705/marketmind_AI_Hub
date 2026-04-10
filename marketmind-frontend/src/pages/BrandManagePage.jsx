@@ -2,7 +2,14 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { ArrowLeft, UserMinus } from 'lucide-react';
-import { fetchBrand, updateBrand, addBrandMember, removeBrandMember } from '../services/api';
+import {
+  fetchBrand,
+  updateBrand,
+  addBrandMember,
+  removeBrandMember,
+  uploadBrandLogo,
+} from '../services/api';
+import BrandAvatar from '../components/BrandAvatar';
 import { useAuth } from '../context/AuthContext';
 
 const shellCard =
@@ -29,6 +36,7 @@ export default function BrandManagePage() {
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviting, setInviting] = useState(false);
   const [removingId, setRemovingId] = useState(null);
+  const [logoUploading, setLogoUploading] = useState(false);
 
   const load = async () => {
     try {
@@ -88,6 +96,26 @@ export default function BrandManagePage() {
       toast.error(err.response?.data?.error || err.message || 'Failed to add member');
     } finally {
       setInviting(false);
+    }
+  };
+
+  const handleLogoFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('Logo must be 2MB or smaller');
+      return;
+    }
+    setLogoUploading(true);
+    try {
+      await uploadBrandLogo(brandId, file);
+      toast.success('Logo updated');
+      await load();
+    } catch (err) {
+      toast.error(err.response?.data?.error || err.message || 'Failed to upload logo');
+    } finally {
+      setLogoUploading(false);
     }
   };
 
@@ -166,8 +194,35 @@ export default function BrandManagePage() {
 
       <div className={`${shellCard} p-6 md:p-8`}>
         <h2 className="text-lg font-semibold tracking-tight text-gray-900">Brand details</h2>
+        <div className="mt-4 flex flex-col gap-4 border-b border-gray-100 pb-6 sm:flex-row sm:items-start">
+          <BrandAvatar name={brand.name} logoUrl={brand.logo_url} size="lg" />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-gray-900">Logo</p>
+            <p className="mt-1 text-xs text-gray-500 leading-relaxed">
+              Shown on brand cards and the dashboard. Files are stored on the server by brand id;{' '}
+              <span className="font-medium text-gray-700">logo_url</span> can later point to S3 or a CDN without
+              changing the app shape.
+            </p>
+            {isAdmin ? (
+              <div className="mt-3">
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
+                  disabled={logoUploading}
+                  onChange={handleLogoFile}
+                  className="block w-full max-w-sm text-sm text-gray-600 file:mr-3 file:rounded-lg file:border file:border-gray-300 file:bg-white file:px-3 file:py-2 file:text-sm file:font-semibold file:text-gray-800 hover:file:bg-gray-50"
+                />
+                {logoUploading ? (
+                  <p className="mt-2 text-xs text-gray-500">Uploading…</p>
+                ) : null}
+              </div>
+            ) : (
+              <p className="mt-2 text-xs text-gray-500">Only admins can change the logo.</p>
+            )}
+          </div>
+        </div>
         {isAdmin ? (
-          <form onSubmit={handleSaveBrand} className="mt-4 space-y-4">
+          <form onSubmit={handleSaveBrand} className="mt-6 space-y-4">
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">Name</label>
               <input

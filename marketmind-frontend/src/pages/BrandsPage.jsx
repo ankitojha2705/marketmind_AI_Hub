@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Building2, MapPin, Plus, X } from 'lucide-react';
-import { fetchMyBrands, createBrand } from '../services/api';
+import { MapPin, Plus, X } from 'lucide-react';
+import { fetchMyBrands, createBrand, uploadBrandLogo } from '../services/api';
+import BrandAvatar from '../components/BrandAvatar';
 
 const shellCard =
   'rounded-2xl border border-gray-200 bg-[hsl(0,0%,99.5%)] shadow-sm';
@@ -21,6 +22,18 @@ export default function BrandsPage() {
     businessType: '',
     description: '',
   });
+  const [logoFile, setLogoFile] = useState(null);
+  const [logoObjectUrl, setLogoObjectUrl] = useState(null);
+
+  useEffect(() => {
+    if (!logoFile) {
+      setLogoObjectUrl(null);
+      return undefined;
+    }
+    const url = URL.createObjectURL(logoFile);
+    setLogoObjectUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [logoFile]);
 
   const load = async () => {
     try {
@@ -40,16 +53,30 @@ export default function BrandsPage() {
   const handleCreate = async (e) => {
     e.preventDefault();
     setCreating(true);
+    const fileToUpload = logoFile;
     try {
-      await createBrand({
+      const data = await createBrand({
         name: form.name.trim(),
         city: form.city.trim(),
         country: form.country.trim(),
         businessType: form.businessType.trim(),
         description: form.description.trim(),
       });
+      const newId = data?.brand?.id != null ? String(data.brand.id) : null;
       setForm({ name: '', city: '', country: '', businessType: '', description: '' });
+      setLogoFile(null);
       setShowForm(false);
+      if (fileToUpload && newId) {
+        try {
+          await uploadBrandLogo(newId, fileToUpload);
+        } catch (uploadErr) {
+          toast.warning(
+            uploadErr.response?.data?.error ||
+              uploadErr.message ||
+              'Brand created, but logo upload failed. You can add a logo from Manage brand.'
+          );
+        }
+      }
       await load();
     } catch (err) {
       toast.error(err.response?.data?.error || err.message || 'Failed to create brand');
@@ -96,7 +123,7 @@ export default function BrandsPage() {
             ) : (
               <Plus className="h-5 w-5 shrink-0" aria-hidden />
             )}
-            {showForm ? 'Cancel' : 'Create brand'}
+            {showForm ? 'Cancel' : 'Create Brand'}
           </button>
         </div>
 
@@ -156,13 +183,49 @@ export default function BrandsPage() {
                   placeholder="What does this brand do?"
                 />
               </div>
+              <div className="sm:col-span-2">
+                <label className="mb-1 block text-sm font-medium text-gray-700">Logo (optional)</label>
+                <div className="flex flex-wrap items-center gap-4">
+                  <BrandAvatar name={form.name} logoUrl={logoObjectUrl} size="md" />
+                  <div className="min-w-0 flex-1">
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
+                      className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-blue-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-blue-700 hover:file:bg-blue-100"
+                      onChange={(ev) => {
+                        const f = ev.target.files?.[0];
+                        ev.target.value = '';
+                        if (!f) return;
+                        if (f.size > 2 * 1024 * 1024) {
+                          toast.error('Logo must be 2MB or smaller');
+                          return;
+                        }
+                        setLogoFile(f);
+                      }}
+                    />
+                    {logoFile ? (
+                      <button
+                        type="button"
+                        onClick={() => setLogoFile(null)}
+                        className="mt-2 text-sm font-semibold text-blue-600 hover:text-blue-800"
+                      >
+                        Remove file
+                      </button>
+                    ) : (
+                      <p className="mt-1 text-xs text-gray-500">
+                        PNG, JPEG, WebP, or GIF. Uploaded after the brand is created.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
             <button
               type="submit"
               disabled={creating}
               className="rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50"
             >
-              {creating ? 'Creating…' : 'Create brand'}
+              {creating ? 'Creating…' : 'Create Brand'}
             </button>
           </form>
         )}
@@ -180,9 +243,7 @@ export default function BrandsPage() {
                 className="block rounded-xl border border-gray-200 bg-white p-5 shadow-sm transition-shadow hover:border-blue-200 hover:shadow-md"
               >
                 <div className="flex items-start gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-700">
-                    <Building2 className="h-5 w-5" aria-hidden />
-                  </div>
+                  <BrandAvatar name={b.name} logoUrl={b.logo_url} size="md" />
                   <div className="min-w-0 flex-1">
                     <p className="font-semibold text-gray-900 truncate">{b.name}</p>
                     <p className="mt-0.5 text-xs text-gray-600 truncate">

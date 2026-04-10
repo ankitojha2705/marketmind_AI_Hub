@@ -6,6 +6,7 @@ import { Archive, Ban, Lock, Pencil, Plus } from 'lucide-react';
 import { fetchMyBrands, fetchBrandCampaigns, updateContentCampaign } from '../services/api';
 import { setDashboardBrandId } from '../utils/dashboardBrandStorage';
 import { PlatformIconRow } from '../components/PlatformIcon';
+import BrandAvatar from '../components/BrandAvatar';
 import { campaignStatusBadgeClass, formatCampaignStatus } from '../utils/campaignDisplay';
 
 const shellCard =
@@ -70,6 +71,7 @@ export default function CampaignsPage() {
               ...c,
               brandName: b.name,
               brandId: String(b.id),
+              brandLogoUrl: b.logo_url || '',
             });
           }
         } catch (e) {
@@ -222,7 +224,12 @@ export default function CampaignsPage() {
 
                 return (
                   <tr key={`${c.brandId}-${c.id}`} className="hover:bg-gray-50/80">
-                    <td className={`${tdClass} whitespace-nowrap text-gray-800`}>{c.brandName}</td>
+                    <td className={`${tdClass} text-gray-800`}>
+                      <div className="flex items-center gap-2">
+                        <BrandAvatar name={c.brandName} logoUrl={c.brandLogoUrl} size="sm" />
+                        <span className="whitespace-nowrap font-medium">{c.brandName}</span>
+                      </div>
+                    </td>
                     <td className={`${tdClass} font-medium text-gray-900`}>{c.name}</td>
                     <td className={tdClass}>
                       <PlatformIconRow platforms={c.platforms} iconClassName="h-4 w-4" gapClassName="gap-1" />

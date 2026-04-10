@@ -2,11 +2,13 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { protect } = require('../middleware/auth');
 const { createError } = require('../utils/error');
+const { logoUpload } = require('../middleware/brandLogoUpload');
 const {
   listMyBrands,
   createBrand,
   getBrand,
   updateBrand,
+  uploadBrandLogo,
   addMemberByEmail,
   removeMember,
 } = require('../controllers/brandController');
@@ -35,6 +37,17 @@ router.post(
   ],
   validate,
   createBrand
+);
+
+router.post(
+  '/:brandId/logo',
+  (req, res, next) => {
+    logoUpload.single('logo')(req, res, (err) => {
+      if (err) return next(createError(400, err.message || 'Logo upload failed'));
+      next();
+    });
+  },
+  uploadBrandLogo
 );
 
 router.get('/:brandId', getBrand);

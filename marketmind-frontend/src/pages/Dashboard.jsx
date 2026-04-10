@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
 import {
   BarChart3,
-  Building2,
   Calendar,
   Mail,
   MapPin,
@@ -14,6 +13,7 @@ import {
 import { toast } from 'sonner';
 import { getState, subscribe, scheduleDraft } from '../store/db';
 import { fetchMyBrands, fetchBrandCampaigns } from '../services/api';
+import BrandAvatar from '../components/BrandAvatar';
 import { useAuth } from '../context/AuthContext';
 import { getDashboardBrandId, setDashboardBrandId } from '../utils/dashboardBrandStorage';
 import { PlatformIconRow } from '../components/PlatformIcon';
@@ -240,8 +240,10 @@ const Dashboard = () => {
       .slice(0, 3);
   }, [filteredCampaigns, selectedBrandId]);
 
-  const brandNameForCampaign = (campaign) =>
-    apiBrands.find((b) => String(b.id) === String(campaign.brandId))?.name ?? 'Brand';
+  const brandMetaForCampaign = (campaign) => {
+    const b = apiBrands.find((x) => String(x.id) === String(campaign.brandId));
+    return { name: b?.name ?? 'Brand', logoUrl: b?.logo_url };
+  };
 
   const filteredCampaignIds = useMemo(
     () => new Set(filteredCampaigns.map((c) => c.id)),
@@ -353,7 +355,7 @@ const Dashboard = () => {
                       </h3>
                       <p className="mt-2 text-sm text-gray-600 leading-relaxed">
                         <span className="font-medium text-gray-800">{selectedBrandName}</span> does not have any
-                        campaigns yet. Start one to plan channels, schedule, and audience — then you can add drafts
+                        campaigns yet. Start one to plan channels, schedule, and audience. Then you can add drafts
                         and scheduled posts from here.
                       </p>
                     </div>
@@ -394,6 +396,7 @@ const Dashboard = () => {
                 (d) =>
                   d.status === 'draft' && String(d.campaignId) === String(campaign.id)
               );
+              const brandMeta = brandMetaForCampaign(campaign);
               return (
                 <div key={campaign.id} className={campaignCardPreviewClass}>
                   <div className="flex items-start gap-3">
@@ -406,7 +409,14 @@ const Dashboard = () => {
                           <h3 className="text-base font-semibold leading-snug text-gray-900 sm:text-lg">
                             {campaign.name}
                           </h3>
-                          <p className="mt-1 text-sm text-gray-600">{brandNameForCampaign(campaign)}</p>
+                          <div className="mt-1 flex items-center gap-2">
+                            <BrandAvatar
+                              name={brandMeta.name}
+                              logoUrl={brandMeta.logoUrl}
+                              size="sm"
+                            />
+                            <span className="text-sm text-gray-600">{brandMeta.name}</span>
+                          </div>
                         </div>
                         <div className="flex shrink-0 items-center gap-1.5">
                           <span
@@ -713,14 +723,12 @@ const Dashboard = () => {
                         : 'border-gray-200 bg-white hover:border-blue-200 hover:bg-gray-50/80',
                     ].join(' ')}
                   >
-                    <div
-                      className={[
-                        'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
-                        isSelected ? 'bg-blue-100 text-blue-800' : 'bg-blue-50 text-blue-700',
-                      ].join(' ')}
-                    >
-                      <Building2 className="h-4 w-4" aria-hidden />
-                    </div>
+                    <BrandAvatar
+                      name={b.name}
+                      logoUrl={b.logo_url}
+                      size="sm"
+                      emphasis={isSelected ? 'selected' : 'default'}
+                    />
                     <div className="min-w-0 flex-1">
                       <p className="font-semibold text-gray-900 truncate">{b.name}</p>
                       <p className="mt-0.5 truncate text-xs text-gray-600">

@@ -12,6 +12,24 @@ function resolveAuthApiBase() {
 export const API_URL = resolveAuthApiBase();
 const CONTENT_API_URL = import.meta.env.VITE_CONTENT_API_URL || 'http://localhost:8002';
 
+/** Server origin without `/api` — for static files like `/uploads/...` (and future CDN/S3 you may swap the base). */
+export function authPublicOrigin() {
+  return API_URL.replace(/\/api\/?$/, '');
+}
+
+/**
+ * @param {string | null | undefined} logoUrl — relative path from auth service or absolute https (e.g. S3)
+ * @returns {string | null}
+ */
+export function brandLogoSrc(logoUrl) {
+  if (!logoUrl || !String(logoUrl).trim()) return null;
+  const u = String(logoUrl).trim();
+  if (/^https?:\/\//i.test(u)) return u;
+  if (u.startsWith('blob:')) return u;
+  const origin = authPublicOrigin();
+  return `${origin}${u.startsWith('/') ? u : `/${u}`}`;
+}
+
 const api = axios.create({
   baseURL: API_URL,
   headers: {
@@ -30,6 +48,9 @@ const attachAuth = (config) => {
   const token = localStorage.getItem('token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
+  }
+  if (config.data instanceof FormData) {
+    delete config.headers['Content-Type'];
   }
   return config;
 };
@@ -98,6 +119,14 @@ export const fetchBrand = async (brandId) => {
 /** @param {string} brandId @param {{ name?: string, city?: string, country?: string, businessType: string, description?: string }} payload */
 export const updateBrand = async (brandId, payload) => {
   const { data } = await api.patch(`/brands/${brandId}`, payload);
+  return data;
+};
+
+/** @param {string} brandId @param {File} file — PNG, JPEG, WebP, or GIF, max 2MB */
+export const uploadBrandLogo = async (brandId, file) => {
+  const form = new FormData();
+  form.append('logo', file);
+  const { data } = await api.post(`/brands/${brandId}/logo`, form);
   return data;
 };
 

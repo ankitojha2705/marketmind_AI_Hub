@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from app.auth import get_current_user_id
 from app.db import get_db
@@ -27,11 +27,12 @@ async def route_list_posts(
 async def route_list_posts_for_brand(
     brand_id: str,
     user_id: Annotated[str, Depends(get_current_user_id)],
+    status: Annotated[str | None, Query(description="Optional post status filter")] = None,
 ):
     db = get_db()
     await assert_brand_exists(db, brand_id)
     await assert_brand_member(db, user_id, brand_id)
-    return await list_posts_for_brand(db, brand_id=brand_id)
+    return await list_posts_for_brand(db, brand_id=brand_id, status=status)
 
 
 @router.post("/{brand_id}/campaigns/{campaign_id}/posts", response_model=PostOut, status_code=201)

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
-import { Archive, Ban, Lock, Pencil, Plus } from 'lucide-react';
+import { Archive, Ban, Eye, Lock, Pencil, Plus } from 'lucide-react';
 import { fetchMyBrands, fetchBrandCampaigns, updateContentCampaign } from '../services/api';
 import { setDashboardBrandId } from '../utils/dashboardBrandStorage';
 import { PlatformIconRow } from '../components/PlatformIcon';
@@ -263,13 +263,16 @@ export default function CampaignsPage() {
                             <span className="sr-only">Edit campaign</span>
                           </button>
                         ) : showReadOnlyLive ? (
-                          <span
-                            className={`${actionIconBtn} inline-flex cursor-default text-gray-400`}
-                            title="Live campaign — read-only"
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => goToEdit(c)}
+                            className={`${actionIconBtn} text-blue-600 hover:bg-blue-50`}
+                            title="Open live campaign (read-only)"
                           >
-                            <Lock className="h-4 w-4" aria-hidden />
-                            <span className="sr-only">Live campaign, read-only</span>
-                          </span>
+                            <Eye className="h-4 w-4" aria-hidden />
+                            <span className="sr-only">Open live campaign (read-only)</span>
+                          </button>
                         ) : showArchive ? (
                           <button
                             type="button"

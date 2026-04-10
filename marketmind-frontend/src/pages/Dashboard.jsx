@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getState, subscribe, scheduleDraft } from '../store/db';
-import { fetchMyBrands, fetchBrandCampaigns, fetchBrandPosts } from '../services/api';
+import { fetchMyBrands, fetchBrandCampaigns, fetchBrandPosts, updateContentCampaign } from '../services/api';
 import BrandAvatar from '../components/BrandAvatar';
 import { useAuth } from '../context/AuthContext';
 import { getDashboardBrandId, setDashboardBrandId } from '../utils/dashboardBrandStorage';
@@ -87,14 +87,23 @@ const ScheduleModal = ({ isOpen, onClose, onSchedule, scheduleDate, setScheduleD
 };
 
 // Format date to a nice readable format
+const parseApiDate = (value) => {
+  if (!value) return new Date('');
+  if (value instanceof Date) return value;
+  const raw = String(value).trim();
+  // If API returns a naive ISO string, treat it as UTC.
+  const withZone = /([zZ]|[+\-]\d{2}:\d{2})$/.test(raw) ? raw : `${raw}Z`;
+  return new Date(withZone);
+};
+
 const nice = (dateString) => {
-  const date = new Date(dateString);
+  const date = parseApiDate(dateString);
   return format(date, 'MMM d, yyyy h:mm a');
 };
 
 // Format time left for scheduled posts
 const formatTimeLeft = (dateString) => {
-  const date = new Date(dateString);
+  const date = parseApiDate(dateString);
   const now = new Date();
   const diffInMs = date - now;
   const diffInHours = Math.ceil(diffInMs / (1000 * 60 * 60));
@@ -193,7 +202,33 @@ const Dashboard = () => {
       setApiCampaignsLoading(true);
       try {
         const list = await fetchBrandCampaigns(selectedBrandId);
-        if (!cancelled) setApiCampaigns(Array.isArray(list) ? list : []);
+        const campaigns = Array.isArray(list) ? list : [];
+        const todayLocal = format(new Date(), 'yyyy-MM-dd');
+
+        const activationTargets = campaigns.filter((c) => {
+          const status = String(c?.status || '').toLowerCase();
+          if (status !== 'scheduled' || !c?.startDate) return false;
+          try {
+            return format(new Date(c.startDate), 'yyyy-MM-dd') <= todayLocal;
+          } catch {
+            return false;
+          }
+        });
+
+        const activatedIds = new Set();
+        for (const campaign of activationTargets) {
+          try {
+            await updateContentCampaign(selectedBrandId, campaign.id, { status: 'active' });
+            activatedIds.add(String(campaign.id));
+          } catch {
+            // Ignore per-campaign activation failures and continue with remaining campaigns.
+          }
+        }
+
+        const merged = campaigns.map((c) =>
+          activatedIds.has(String(c.id)) ? { ...c, status: 'active' } : c
+        );
+        if (!cancelled) setApiCampaigns(merged);
       } catch (e) {
         if (!cancelled) {
           toast.error(
@@ -218,17 +253,14 @@ const Dashboard = () => {
     let cancelled = false;
     (async () => {
       try {
-        const list = await fetchBrandPosts(selectedBrandId);
+        const list = await fetchBrandPosts(selectedBrandId, { status: 'scheduled' });
         if (!cancelled) {
           setScheduled(Array.isArray(list) ? list : []);
-          console.log('[Dashboard][Scheduled] Loaded brand posts', {
-            brandId: selectedBrandId,
-            total: Array.isArray(list) ? list.length : 0,
-          });
+
         }
       } catch (e) {
         if (!cancelled) {
-          console.error('[Dashboard][Scheduled] Failed to fetch brand posts', {
+          console.error('Failed to fetch brand posts', {
             brandId: selectedBrandId,
             error: e?.response?.data || e?.message || e,
           });
@@ -296,13 +328,6 @@ const Dashboard = () => {
 
   useEffect(() => {
     if (filteredScheduled.length === 0) return;
-    console.log('[Dashboard][Scheduled] Debug snapshot', {
-      selectedBrandId,
-      totalScheduled: scheduled.length,
-      filteredScheduled: filteredScheduled.length,
-      filteredCampaigns: filteredCampaigns.length,
-      knownBrands: apiBrands.length,
-    });
 
     filteredScheduled.forEach((post) => {
       const campaign = filteredCampaigns.find((c) => String(c.id) === String(post.campaignId));
@@ -310,17 +335,6 @@ const Dashboard = () => {
       const fallbackBrandId = post?.brandId;
       const resolvedBrandId = brandIdFromCampaign || fallbackBrandId;
       const brand = apiBrands.find((b) => String(b.id) === String(resolvedBrandId));
-      console.log('[Dashboard][Scheduled] Resolve post', {
-        postId: post.id,
-        campaignId: post.campaignId,
-        campaignFound: Boolean(campaign),
-        brandIdFromCampaign,
-        fallbackBrandId,
-        resolvedBrandId,
-        brandFound: Boolean(brand),
-        brandName: brand?.name || null,
-        brandLogoUrl: brand?.logo_url || null,
-      });
     });
   }, [apiBrands, filteredCampaigns, filteredScheduled, scheduled.length, selectedBrandId]);
 
@@ -588,9 +602,9 @@ const Dashboard = () => {
                           {campaign?.name || 'No Campaign'}
                         </p>
                       </div>
-                      <div className="shrink-0">
+                      <div className="shrink-0 text-right">
                         <p className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                          new Date(post.scheduledAt) < new Date()
+                          parseApiDate(post.scheduledAt) < new Date()
                             ? 'bg-red-100 text-red-800'
                             : 'bg-green-100 text-green-800'
                         }`}>

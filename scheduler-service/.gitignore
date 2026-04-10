@@ -1,5 +1,15 @@
-.env
-.venv
-.DS_Store
+# Python cache / bytecode
 __pycache__/
-.early.coverage
+*.py[cod]
+
+# Virtual environment
+venv/
+.venv/
+
+# Env files
+.env
+
+# Tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

@@ -44,3 +44,10 @@
     @apply border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 focus:ring-blue-500;
   }
 }
+
+/* Sonner injects styles at runtime; !important beats those rules for the same selector */
+[data-sonner-toaster][dir='ltr'] {
+  --toast-close-button-start: unset !important;
+  --toast-close-button-end: 0 !important;
+  --toast-close-button-transform: translate(35%, -35%) !important;
+}

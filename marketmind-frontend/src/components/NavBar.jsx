@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   BookOpen,
+  Building2,
   Calendar,
   ChevronDown,
   LayoutDashboard,
@@ -22,6 +23,7 @@ function userDisplayName(user) {
 
 const mainNavItems = [
   { to: '/dashboard', label: 'Dashboard', Icon: LayoutDashboard },
+  { to: '/brands', label: 'Brands', Icon: Building2 },
   { to: '/campaigns/new', label: 'New Campaign', Icon: Sparkles },
   { to: '/calendar', label: 'Calendar', Icon: Calendar },
   { to: '/library', label: 'Library', Icon: BookOpen },
@@ -70,19 +72,24 @@ export default function NavBar() {
           <div className="hidden md:flex md:items-center md:gap-4 md:pl-6">
             {isAuthenticated ? (
               <>
-                {mainNavItems.map(({ to, label, Icon }) => (
+                {mainNavItems.map(({ to, label, Icon }) => {
+                  const active =
+                    location.pathname === to ||
+                    (to === '/brands' && location.pathname.startsWith('/brands'));
+                  return (
                   <Link
                     key={to}
                     to={to}
                     className={[
                       'flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-200',
-                      location.pathname === to ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-100',
+                      active ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-100',
                     ].join(' ')}
                   >
                     <Icon className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
                     <span>{label}</span>
                   </Link>
-                ))}
+                  );
+                })}
 
                 <div className="relative pl-4" ref={userMenuRef}>
                   <button
@@ -122,7 +129,7 @@ export default function NavBar() {
                         type="button"
                         role="menuitem"
                         onClick={handleLogout}
-                        className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                        className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-red-700 hover:bg-red-50"
                       >
                         <LogOut className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
                         Log out
@@ -168,13 +175,17 @@ export default function NavBar() {
         <div className={[CONTENT_SHELL_CLASS, 'flex flex-col gap-1 py-3'].join(' ')}>
           {isAuthenticated ? (
             <>
-              {mainNavItems.map(({ to, label, Icon }) => (
+              {mainNavItems.map(({ to, label, Icon }) => {
+                const active =
+                  location.pathname === to ||
+                  (to === '/brands' && location.pathname.startsWith('/brands'));
+                return (
                 <Link
                   key={to}
                   to={to}
                   className={[
                     'block rounded-md px-3 py-2 text-base font-medium',
-                    location.pathname === to ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-100',
+                    active ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-100',
                   ].join(' ')}
                 >
                   <div className="flex items-center gap-2">
@@ -182,7 +193,8 @@ export default function NavBar() {
                     <span>{label}</span>
                   </div>
                 </Link>
-              ))}
+                );
+              })}
               <div className="border-t border-gray-200 pt-4">
                 <button
                   type="button"
@@ -217,7 +229,7 @@ export default function NavBar() {
                       type="button"
                       role="menuitem"
                       onClick={handleLogout}
-                      className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                      className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm font-medium text-red-700 hover:bg-red-50"
                     >
                       <LogOut className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
                       Log out

@@ -1,5 +1,6 @@
 import React, { Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, Outlet } from 'react-router-dom';
+import { Toaster } from 'sonner';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import NavBar from './components/NavBar';
 import Login from './pages/Login';
@@ -15,6 +16,8 @@ const CampaignNew = React.lazy(() => import('./pages/CampaignNew'));
 const Calendar = React.lazy(() => import('./pages/Calendar'));
 const Library = React.lazy(() => import('./pages/Library'));
 const Settings = React.lazy(() => import('./pages/Settings'));
+const BrandsPage = React.lazy(() => import('./pages/BrandsPage'));
+const BrandManagePage = React.lazy(() => import('./pages/BrandManagePage'));
 
 function HomeRoute() {
   const { isAuthenticated } = useAuth();
@@ -47,6 +50,7 @@ function MainLayout() {
 function App() {
   return (
     <Router>
+      <Toaster position="bottom-right" richColors closeButton />
       <AuthProvider>
         <Routes>
           <Route element={<AppLayout />}>
@@ -59,6 +63,22 @@ function App() {
                 element={
                   <PrivateRoute>
                     <Dashboard />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/brands"
+                element={
+                  <PrivateRoute>
+                    <BrandsPage />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/brands/:brandId"
+                element={
+                  <PrivateRoute>
+                    <BrandManagePage />
                   </PrivateRoute>
                 }
               />

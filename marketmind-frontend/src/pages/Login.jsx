@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { toast } from 'sonner';
 import { Box, Button, TextField, Typography, Divider } from '@mui/material';
 import GoogleIcon from '@mui/icons-material/Google';
 import { useAuth } from '../context/AuthContext';
@@ -14,15 +15,22 @@ const fieldSx = {
 const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
   const [fullName, setFullName] = useState('');
   const { login, register, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    const msg = location.state?.error;
+    if (typeof msg === 'string' && msg) {
+      toast.error(msg);
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.pathname, location.state, navigate]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
     try {
       if (isRegistering) {
         await register({ email, password, fullname: fullName });
@@ -31,7 +39,7 @@ const Login = () => {
       }
       navigate('/dashboard');
     } catch (err) {
-      setError(
+      toast.error(
         err.response?.data?.message ||
           (isRegistering ? 'Failed to register. Please try again.' : 'Failed to login. Please check your credentials.')
       );
@@ -43,14 +51,13 @@ const Login = () => {
     try {
       await loginWithGoogle();
     } catch (err) {
-      setError('Failed to login with Google. Please try again.');
+      toast.error('Failed to login with Google. Please try again.');
       console.error('Google login error:', err);
     }
   };
 
   const toggleAuthMode = () => {
     setIsRegistering(!isRegistering);
-    setError('');
   };
 
   return (
@@ -63,12 +70,6 @@ const Login = () => {
           <Typography variant="body2" sx={{ color: 'rgba(15,23,42,0.62)', mb: 3 }}>
             {isRegistering ? 'Sign up to access your workspace' : 'Sign in to access your dashboard'}
           </Typography>
-
-          {error ? (
-            <Typography color="error" sx={{ mb: 2, textAlign: 'center' }} variant="body2">
-              {error}
-            </Typography>
-          ) : null}
 
           <Box component="form" onSubmit={handleSubmit} noValidate>
             {isRegistering ? (

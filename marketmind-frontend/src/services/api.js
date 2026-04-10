@@ -59,6 +59,42 @@ export const logout = () => {
   localStorage.removeItem('token');
 };
 
+/** @returns {{ success: boolean, brands: Array }} */
+export const fetchMyBrands = async () => {
+  const { data } = await api.get('/brands');
+  return data;
+};
+
+/** @param {{ name: string, city: string, country: string, description?: string }} payload */
+export const createBrand = async (payload) => {
+  const { data } = await api.post('/brands', payload);
+  return data;
+};
+
+/** @param {string} brandId */
+export const fetchBrand = async (brandId) => {
+  const { data } = await api.get(`/brands/${brandId}`);
+  return data;
+};
+
+/** @param {string} brandId @param {{ name?: string, city?: string, country?: string, description?: string }} payload */
+export const updateBrand = async (brandId, payload) => {
+  const { data } = await api.patch(`/brands/${brandId}`, payload);
+  return data;
+};
+
+/** @param {string} brandId @param {string} email */
+export const addBrandMember = async (brandId, email) => {
+  const { data } = await api.post(`/brands/${brandId}/members`, { email });
+  return data;
+};
+
+/** @param {string} brandId @param {string} userId */
+export const removeBrandMember = async (brandId, userId) => {
+  const { data } = await api.delete(`/brands/${brandId}/members/${userId}`);
+  return data;
+};
+
 // AI Campaign Generation API
 const AI_API_URL = import.meta.env.VITE_AI_API_URL || 'http://localhost:8001';
 

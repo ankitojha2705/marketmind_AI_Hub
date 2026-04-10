@@ -43,15 +43,16 @@ function notify() { listeners.forEach((fn) => fn(state)) }
 export function resetAll() { state = structuredClone(initial); save(state); notify() }
 
 
-export function createCampaign({ name, brief, platforms }) {
+export function createCampaign({ name, brief, platforms, brandId = null }) {
   try {
     const id = uid();
-    const campaign = { 
-      id, 
-      name, 
-      brief, 
-      platforms, 
-      createdAt: new Date().toISOString() 
+    const campaign = {
+      id,
+      name,
+      brief,
+      platforms,
+      createdAt: new Date().toISOString(),
+      ...(brandId ? { brandId } : {}),
     };
 
     const newDrafts = platforms.map((p) => ({
@@ -146,6 +147,15 @@ export function updateCampaign(campaignId, { name, brief, platforms }) {
   return updatedCampaign;
 }
 
+export function deleteCampaign(campaignId) {
+  state = {
+    ...state,
+    campaigns: state.campaigns.filter((c) => c.id !== campaignId),
+    drafts: state.drafts.filter((d) => d.campaignId !== campaignId),
+  };
+  save(state);
+  notify();
+}
 
 export function scheduleDraft(id, isoString) {
 const d = state.drafts.find(x => x.id === id)

@@ -49,6 +49,7 @@ exports.listMyBrands = async (req, res, next) => {
         name: m.brand.name,
         city: m.brand.city,
         country: m.brand.country,
+        businessType: m.brand.businessType || '',
         description: m.brand.description,
         role: m.role,
         createdAt: m.brand.createdAt,
@@ -64,12 +65,20 @@ exports.listMyBrands = async (req, res, next) => {
 // @route   POST /api/brands
 exports.createBrand = async (req, res, next) => {
   try {
-    const { name, city, country, description = '' } = req.body;
+    const { name, city, country, businessType, description = '' } = req.body;
+    const bt = typeof businessType === 'string' ? businessType.trim() : '';
+    if (!bt) {
+      return next(createError(400, 'Business type is required'));
+    }
+    if (bt.length > 120) {
+      return next(createError(400, 'Business type must be at most 120 characters'));
+    }
 
     const brand = await Brand.create({
       name,
       city,
       country,
+      businessType: bt,
       description,
       createdBy: req.user._id,
     });
@@ -87,6 +96,7 @@ exports.createBrand = async (req, res, next) => {
         name: brand.name,
         city: brand.city,
         country: brand.country,
+        businessType: brand.businessType,
         description: brand.description,
         role: 'admin',
         createdAt: brand.createdAt,
@@ -126,6 +136,7 @@ exports.getBrand = async (req, res, next) => {
         name: brand.name,
         city: brand.city,
         country: brand.country,
+        businessType: brand.businessType || '',
         description: brand.description,
         createdAt: brand.createdAt,
         updatedAt: brand.updatedAt,
@@ -144,6 +155,18 @@ exports.updateBrand = async (req, res, next) => {
     const { brand } = await assertAdmin(req, req.params.brandId);
     const { name, city, country, description } = req.body;
 
+    if (!Object.prototype.hasOwnProperty.call(req.body, 'businessType')) {
+      return next(createError(400, 'Business type is required'));
+    }
+    const bt = typeof req.body.businessType === 'string' ? req.body.businessType.trim() : '';
+    if (!bt) {
+      return next(createError(400, 'Business type cannot be empty'));
+    }
+    if (bt.length > 120) {
+      return next(createError(400, 'Business type must be at most 120 characters'));
+    }
+    brand.businessType = bt;
+
     if (name !== undefined) brand.name = name;
     if (city !== undefined) brand.city = city;
     if (country !== undefined) brand.country = country;
@@ -158,6 +181,7 @@ exports.updateBrand = async (req, res, next) => {
         name: brand.name,
         city: brand.city,
         country: brand.country,
+        businessType: brand.businessType || '',
         description: brand.description,
         updatedAt: brand.updatedAt,
       },

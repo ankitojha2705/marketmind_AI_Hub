@@ -18,6 +18,7 @@ export default function BrandsPage() {
     name: '',
     city: '',
     country: '',
+    businessType: '',
     description: '',
   });
 
@@ -44,9 +45,10 @@ export default function BrandsPage() {
         name: form.name.trim(),
         city: form.city.trim(),
         country: form.country.trim(),
+        businessType: form.businessType.trim(),
         description: form.description.trim(),
       });
-      setForm({ name: '', city: '', country: '', description: '' });
+      setForm({ name: '', city: '', country: '', businessType: '', description: '' });
       setShowForm(false);
       await load();
     } catch (err) {
@@ -132,6 +134,19 @@ export default function BrandsPage() {
                 />
               </div>
               <div className="sm:col-span-2">
+                <label className="mb-1 block text-sm font-medium text-gray-700">
+                  Business type <span className="text-red-500">*</span>
+                </label>
+                <input
+                  className={inputClass}
+                  value={form.businessType}
+                  onChange={(e) => setForm((f) => ({ ...f, businessType: e.target.value }))}
+                  required
+                  maxLength={120}
+                  placeholder="e.g. Bubble tea café, SaaS, Retail apparel"
+                />
+              </div>
+              <div className="sm:col-span-2">
                 <label className="mb-1 block text-sm font-medium text-gray-700">Description</label>
                 <textarea
                   className={`${inputClass} min-h-[5rem]`}
@@ -170,6 +185,12 @@ export default function BrandsPage() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="font-semibold text-gray-900 truncate">{b.name}</p>
+                    <p className="mt-0.5 text-xs text-gray-600 truncate">
+                      <span className="font-medium text-gray-700">Business type: </span>
+                      {b.businessType?.trim()
+                        ? b.businessType
+                        : 'Not set — open brand and save details (admin)'}
+                    </p>
                     <p className="mt-1 flex items-center gap-1 text-xs text-gray-500">
                       <MapPin className="h-3.5 w-3.5 shrink-0" aria-hidden />
                       <span className="truncate">

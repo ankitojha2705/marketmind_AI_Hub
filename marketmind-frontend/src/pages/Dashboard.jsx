@@ -1,17 +1,20 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
 import {
   BarChart3,
   Building2,
   Calendar,
+  Mail,
   MapPin,
   Megaphone,
   PieChart,
+  Plus,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getState, subscribe, scheduleDraft } from '../store/db';
 import { fetchMyBrands, fetchBrandCampaigns } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import { getDashboardBrandId, setDashboardBrandId } from '../utils/dashboardBrandStorage';
 import { PlatformIconRow } from '../components/PlatformIcon';
 import {
@@ -124,7 +127,8 @@ const formatTimeLeft = (dateString) => {
 
 // Main Dashboard Component
 const Dashboard = () => {
-  const navigate = useNavigate();
+  const { user } = useAuth();
+  const userEmail = user?.email || '';
 
   // State for campaigns, drafts, and scheduled posts
   const [apiCampaigns, setApiCampaigns] = useState([]);
@@ -307,7 +311,15 @@ const Dashboard = () => {
     setScheduleDate('');
   };
 
-  // Render the overview tab
+  const hasBrands = apiBrands.length > 0;
+  const showNoCampaignsFocus =
+    hasBrands &&
+    selectedBrandId &&
+    !apiCampaignsLoading &&
+    filteredCampaigns.length === 0;
+  const selectedBrandName =
+    apiBrands.find((b) => String(b.id) === String(selectedBrandId))?.name ?? 'This brand';
+
   const renderOverviewTab = () => (
     <div className="space-y-6">
       <div className={`${shellCard} overflow-hidden`}>
@@ -328,6 +340,34 @@ const Dashboard = () => {
           </div>
 
           <div className="space-y-4">
+            {showNoCampaignsFocus ? (
+              <div className="rounded-xl border border-blue-200 bg-gradient-to-b from-blue-50/90 to-white p-6 shadow-sm sm:p-8">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="flex gap-4">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-800">
+                      <Megaphone className="h-6 w-6" aria-hidden />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold tracking-tight text-gray-900">
+                        Create your first campaign
+                      </h3>
+                      <p className="mt-2 text-sm text-gray-600 leading-relaxed">
+                        <span className="font-medium text-gray-800">{selectedBrandName}</span> does not have any
+                        campaigns yet. Start one to plan channels, schedule, and audience — then you can add drafts
+                        and scheduled posts from here.
+                      </p>
+                    </div>
+                  </div>
+                  <Link
+                    to="/campaigns/new"
+                    className="inline-flex shrink-0 items-center justify-center gap-2 self-start rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 sm:self-center"
+                  >
+                    <Plus className="h-5 w-5 shrink-0" aria-hidden />
+                    New campaign
+                  </Link>
+                </div>
+              </div>
+            ) : null}
             {apiCampaignsLoading ? (
               <div className="flex justify-center py-8">
                 <div
@@ -336,7 +376,7 @@ const Dashboard = () => {
                 />
               </div>
             ) : null}
-            {!apiCampaignsLoading && filteredCampaigns.length === 0 ? (
+            {!apiCampaignsLoading && filteredCampaigns.length === 0 && !showNoCampaignsFocus ? (
               <p className="text-sm text-gray-600">
                 {!selectedBrandId
                   ? 'Select a workspace brand above to view the latest campaigns for that brand.'
@@ -413,9 +453,11 @@ const Dashboard = () => {
           <p className="text-sm text-gray-600">
             {!selectedBrandId
               ? 'Select a workspace brand to see how many posts are scheduled for that brand.'
-              : filteredScheduled.length === 0
-                ? 'No scheduled posts for this brand yet. Schedule a draft from a campaign card above.'
-                : `${filteredScheduled.length} scheduled ${filteredScheduled.length === 1 ? 'post' : 'posts'} for this brand — open the Scheduled tab for the full list.`}
+              : showNoCampaignsFocus
+                ? 'Scheduled posts appear after you create a campaign and save drafts. Start with New campaign in the section above.'
+                : filteredScheduled.length === 0
+                  ? 'No scheduled posts for this brand yet. Schedule a draft from a campaign card above.'
+                  : `${filteredScheduled.length} scheduled ${filteredScheduled.length === 1 ? 'post' : 'posts'} for this brand — open the Scheduled tab for the full list.`}
           </p>
           <button
             type="button"
@@ -438,9 +480,19 @@ const Dashboard = () => {
         <h2 className="text-lg font-semibold tracking-tight text-gray-900 mb-4">Scheduled Posts</h2>
         {filteredScheduled.length === 0 ? (
           <p className="text-sm text-gray-600">
-            {!selectedBrandId
-              ? 'Select a workspace brand to see scheduled posts for that brand.'
-              : 'No posts scheduled.'}
+            {!selectedBrandId ? (
+              'Select a workspace brand to see scheduled posts for that brand.'
+            ) : showNoCampaignsFocus ? (
+              <>
+                No campaigns for this brand yet, so there is nothing to schedule.{' '}
+                <Link to="/campaigns/new" className="font-semibold text-blue-600 hover:text-blue-800">
+                  Create a campaign
+                </Link>{' '}
+                first.
+              </>
+            ) : (
+              'No posts scheduled.'
+            )}
           </p>
         ) : (
           <div className="space-y-4">
@@ -511,7 +563,9 @@ const Dashboard = () => {
           <p className="mt-1 text-sm text-gray-500">
             {!selectedBrandId
               ? 'Select a workspace brand to see metrics for that brand.'
-              : 'Snapshot of campaigns, drafts, and scheduled content for the selected brand.'}
+              : showNoCampaignsFocus
+                ? 'Create a campaign to start seeing counts for this brand.'
+                : 'Snapshot of campaigns, drafts, and scheduled content for the selected brand.'}
           </p>
         </div>
 
@@ -563,6 +617,63 @@ const Dashboard = () => {
     );
   }
 
+  if (apiBrandsLoading) {
+    return (
+      <div className="flex min-h-[16rem] items-center justify-center">
+        <div className="h-12 w-12 animate-spin rounded-full border-2 border-gray-200 border-t-blue-600" aria-hidden />
+      </div>
+    );
+  }
+
+  if (apiBrands.length === 0) {
+    return (
+      <div className="w-full space-y-6">
+        <div className={`${shellCard} p-8 sm:p-10`}>
+          <h1 className="text-2xl font-semibold tracking-tight text-gray-900 sm:text-3xl">
+            Set up your workspace
+          </h1>
+          <p className="mt-3 max-w-2xl text-sm text-gray-600 leading-relaxed sm:text-base">
+            You are not part of any brand yet. Brands group your campaigns, team, and location. Create one to get
+            started, or join an existing team if someone else is the admin.
+          </p>
+          <div className="mt-8">
+            <Link
+              to="/brands"
+              className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
+            >
+              Create a brand
+            </Link>
+          </div>
+          <div className="mt-10 border-t border-gray-200 pt-10">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-gray-600">
+                <Mail className="h-5 w-5" aria-hidden />
+              </div>
+              <div className="min-w-0">
+                <h2 className="text-base font-semibold text-gray-900">Joining an existing team?</h2>
+                <p className="mt-2 text-sm text-gray-600 leading-relaxed">
+                  Ask your brand admin to add you in Marketmind using <span className="font-medium text-gray-800">Invite by email</span> on the brand&apos;s team page. They must use the <span className="font-medium text-gray-800">same email</span> you use to sign in here (the account must exist first).
+                </p>
+                {userEmail ? (
+                  <p className="mt-4 text-xs font-medium uppercase tracking-wide text-gray-500">Your sign-in email</p>
+                ) : null}
+                {userEmail ? (
+                  <p className="mt-1 break-all rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 font-mono text-sm text-gray-900">
+                    {userEmail}
+                  </p>
+                ) : (
+                  <p className="mt-3 text-sm text-gray-500">
+                    After you sign in, your email appears here so you can copy it for your admin.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full space-y-6">
       <div className={`${shellCard} p-5 sm:p-6 sm:px-8`}>
@@ -581,22 +692,11 @@ const Dashboard = () => {
             Manage brands
           </Link>
         </div>
-        {apiBrandsLoading ? (
-          <div className="mt-4 h-8 w-8 animate-spin rounded-full border-2 border-gray-200 border-t-blue-600" aria-hidden />
-        ) : apiBrands.length === 0 ? (
-          <p className="mt-4 text-sm text-gray-600">
-            No brands yet.{' '}
-            <Link to="/brands" className="font-semibold text-blue-600 hover:text-blue-800">
-              Create one
-            </Link>{' '}
-            on the Brands page.
-          </p>
-        ) : (
-          <ul
-            className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
-            role="list"
-            aria-label="Workspace brands"
-          >
+        <ul
+          className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
+          role="list"
+          aria-label="Workspace brands"
+        >
             {apiBrands.map((b) => {
               const idStr = String(b.id);
               const isSelected = selectedBrandId === idStr;
@@ -623,6 +723,12 @@ const Dashboard = () => {
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="font-semibold text-gray-900 truncate">{b.name}</p>
+                      <p className="mt-0.5 truncate text-xs text-gray-600">
+                        <span className="font-medium text-gray-700">Type: </span>
+                        {b.businessType?.trim() || (
+                          <span className="text-amber-800">Required — set in Manage brands</span>
+                        )}
+                      </p>
                       <p className="mt-0.5 flex items-center gap-1 text-xs text-gray-500">
                         <MapPin className="h-3 w-3 shrink-0" aria-hidden />
                         <span className="truncate">
@@ -642,8 +748,7 @@ const Dashboard = () => {
                 </li>
               );
             })}
-          </ul>
-        )}
+        </ul>
       </div>
 
       <div className={`${shellCard} overflow-hidden`}>

@@ -22,6 +22,7 @@ export default function BrandManagePage() {
     name: '',
     city: '',
     country: '',
+    businessType: '',
     description: '',
   });
   const [saving, setSaving] = useState(false);
@@ -39,6 +40,7 @@ export default function BrandManagePage() {
         name: data.brand.name,
         city: data.brand.city,
         country: data.brand.country,
+        businessType: data.brand.businessType || '',
         description: data.brand.description || '',
       });
     } catch (e) {
@@ -62,6 +64,7 @@ export default function BrandManagePage() {
         name: editForm.name.trim(),
         city: editForm.city.trim(),
         country: editForm.country.trim(),
+        businessType: editForm.businessType.trim(),
         description: editForm.description.trim(),
       });
       await load();
@@ -142,6 +145,16 @@ export default function BrandManagePage() {
         <p className="mt-1 text-gray-600">
           {brand.city}, {brand.country}
         </p>
+        <p className="mt-2 text-sm text-gray-700">
+          <span className="font-medium text-gray-900">Business type </span>
+          <span className="text-red-500">*</span>
+          {': '}
+          {brand.businessType?.trim() ? (
+            brand.businessType
+          ) : (
+            <span className="font-medium text-amber-800">Not set — required. Save brand details below.</span>
+          )}
+        </p>
         <span
           className={`mt-2 inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${
             isAdmin ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-700'
@@ -162,6 +175,19 @@ export default function BrandManagePage() {
                 value={editForm.name}
                 onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
                 required
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">
+                Business type <span className="text-red-500">*</span>
+              </label>
+              <input
+                className={inputClass}
+                value={editForm.businessType}
+                onChange={(e) => setEditForm((f) => ({ ...f, businessType: e.target.value }))}
+                required
+                maxLength={120}
+                placeholder="e.g. Bubble tea café, SaaS"
               />
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
@@ -203,6 +229,14 @@ export default function BrandManagePage() {
           </form>
         ) : (
           <div className="mt-4 space-y-2 text-sm text-gray-700">
+            <p>
+              <span className="font-medium text-gray-900">Business type </span>
+              <span className="text-red-500">*</span>
+              {': '}
+              {brand.businessType?.trim() || (
+                <span className="text-amber-800">Not set — ask an admin to complete brand details.</span>
+              )}
+            </p>
             <p>{brand.description || 'No description.'}</p>
             <p className="text-xs text-gray-500">Only admins can edit brand details.</p>
           </div>

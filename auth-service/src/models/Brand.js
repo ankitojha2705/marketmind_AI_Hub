@@ -17,6 +17,12 @@ const BrandSchema = new mongoose.Schema(
       required: [true, 'Please add a country'],
       trim: true,
     },
+    businessType: {
+      type: String,
+      required: [true, 'Please add a business type'],
+      trim: true,
+      maxlength: 120,
+    },
     description: {
       type: String,
       default: '',

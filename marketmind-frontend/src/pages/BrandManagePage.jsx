@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { ArrowLeft, UserMinus } from 'lucide-react';
+import { ArrowLeft, UserMinus, BookOpen, Sparkles } from 'lucide-react';
 import {
   fetchBrand,
   updateBrand,
@@ -10,6 +10,8 @@ import {
   uploadBrandLogo,
 } from '../services/api';
 import BrandAvatar from '../components/BrandAvatar';
+import KnowledgeManager from '../components/KnowledgeManager';
+import RAGAssistant from '../components/RAGAssistant';
 import { useAuth } from '../context/AuthContext';
 
 const shellCard =
@@ -37,6 +39,7 @@ export default function BrandManagePage() {
   const [inviting, setInviting] = useState(false);
   const [removingId, setRemovingId] = useState(null);
   const [logoUploading, setLogoUploading] = useState(false);
+  const [activeTab, setActiveTab] = useState('details');
 
   const load = async () => {
     try {
@@ -192,174 +195,214 @@ export default function BrandManagePage() {
         </span>
       </div>
 
-      <div className={`${shellCard} p-6 md:p-8`}>
-        <h2 className="text-lg font-semibold tracking-tight text-gray-900">Brand details</h2>
-        <div className="mt-4 flex flex-col gap-4 border-b border-gray-100 pb-6 sm:flex-row sm:items-start">
-          <BrandAvatar name={brand.name} logoUrl={brand.logo_url} size="lg" />
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium text-gray-900">Logo</p>
-            {isAdmin ? (
-              <div className="mt-3">
-                <input
-                  type="file"
-                  accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
-                  disabled={logoUploading}
-                  onChange={handleLogoFile}
-                  className="block w-full max-w-sm text-sm text-gray-600 file:mr-3 file:rounded-lg file:border file:border-gray-300 file:bg-white file:px-3 file:py-2 file:text-sm file:font-semibold file:text-gray-800 hover:file:bg-gray-50"
-                />
-                {logoUploading ? (
-                  <p className="mt-2 text-xs text-gray-500">Uploading…</p>
-                ) : null}
-              </div>
-            ) : (
-              <p className="mt-2 text-xs text-gray-500">Only admins can change the logo.</p>
-            )}
-          </div>
-        </div>
-        {isAdmin ? (
-          <form onSubmit={handleSaveBrand} className="mt-6 space-y-4">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">Name</label>
-              <input
-                className={inputClass}
-                value={editForm.name}
-                onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
-                required
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">
-                Business type <span className="text-red-500">*</span>
-              </label>
-              <input
-                className={inputClass}
-                value={editForm.businessType}
-                onChange={(e) => setEditForm((f) => ({ ...f, businessType: e.target.value }))}
-                required
-                maxLength={120}
-                placeholder="e.g. Bubble tea café, SaaS"
-              />
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">City</label>
-                <input
-                  className={inputClass}
-                  value={editForm.city}
-                  onChange={(e) => setEditForm((f) => ({ ...f, city: e.target.value }))}
-                  required
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Country</label>
-                <input
-                  className={inputClass}
-                  value={editForm.country}
-                  onChange={(e) => setEditForm((f) => ({ ...f, country: e.target.value }))}
-                  required
-                />
-              </div>
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">Description</label>
-              <textarea
-                className={`${inputClass} min-h-[6rem]`}
-                value={editForm.description}
-                onChange={(e) => setEditForm((f) => ({ ...f, description: e.target.value }))}
-                rows={4}
-              />
-            </div>
+      {/* Tab Navigation */}
+      <div className={`${shellCard} p-2`}>
+        <nav className="flex space-x-1" aria-label="Tabs">
+          {[
+            { id: 'details', name: 'Brand Details', icon: ArrowLeft },
+            { id: 'knowledge', name: 'Knowledge Base', icon: BookOpen },
+            { id: 'assistant', name: 'Brand Assistant', icon: Sparkles },
+            { id: 'team', name: 'Team', icon: UserMinus },
+          ].map((tab) => (
             <button
-              type="submit"
-              disabled={saving}
-              className="rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50"
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg transition-colors ${
+                activeTab === tab.id
+                  ? 'bg-blue-100 text-blue-700'
+                  : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+              }`}
             >
-              {saving ? 'Saving…' : 'Save changes'}
+              <tab.icon className="h-4 w-4" />
+              {tab.name}
             </button>
-          </form>
-        ) : (
-          <div className="mt-4 space-y-2 text-sm text-gray-700">
-            <p>
-              <span className="font-medium text-gray-900">Business type </span>
-              <span className="text-red-500">*</span>
-              {': '}
-              {brand.businessType?.trim() || (
-                <span className="text-amber-800">Not set — ask an admin to complete brand details.</span>
-              )}
-            </p>
-            <p>{brand.description || 'No description.'}</p>
-            <p className="text-xs text-gray-500">Only admins can edit brand details.</p>
-          </div>
-        )}
+          ))}
+        </nav>
       </div>
 
-      <div className={`${shellCard} p-6 md:p-8`}>
-        <h2 className="text-lg font-semibold tracking-tight text-gray-900">Team</h2>
-        <p className="mt-1 text-sm text-gray-600">
-          Members can create campaigns and posts. Only admins can change brand settings or manage
-          members.
-        </p>
-
-        {isAdmin && (
-          <form onSubmit={handleInvite} className="mt-6 space-y-2">
-            <label htmlFor="invite-email" className="block text-sm font-medium text-gray-700">
-              Add by email
-            </label>
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-8">
-              <input
-                id="invite-email"
-                type="email"
-                className={`${inputClass} min-w-0 flex-1`}
-                value={inviteEmail}
-                onChange={(e) => setInviteEmail(e.target.value)}
-                placeholder="teammate@example.com"
-              />
+      {/* Tab Content */}
+      {activeTab === 'details' && (
+        <div className={`${shellCard} p-6 md:p-8`}>
+          <h2 className="text-lg font-semibold tracking-tight text-gray-900">Brand details</h2>
+          <div className="mt-4 flex flex-col gap-4 border-b border-gray-100 pb-6 sm:flex-row sm:items-start">
+            <BrandAvatar name={brand.name} logoUrl={brand.logo_url} size="lg" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-gray-900">Logo</p>
+              {isAdmin ? (
+                <div className="mt-3">
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
+                    disabled={logoUploading}
+                    onChange={handleLogoFile}
+                    className="block w-full max-w-sm text-sm text-gray-600 file:mr-3 file:rounded-lg file:border file:border-gray-300 file:bg-white file:px-3 file:py-2 file:text-sm file:font-semibold file:text-gray-800 hover:file:bg-gray-50"
+                  />
+                  {logoUploading ? (
+                    <p className="mt-2 text-xs text-gray-500">Uploading…</p>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="mt-2 text-xs text-gray-500">Only admins can change logo.</p>
+              )}
+            </div>
+          </div>
+          {isAdmin ? (
+            <form onSubmit={handleSaveBrand} className="mt-6 space-y-4">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Name</label>
+                <input
+                  className={inputClass}
+                  value={editForm.name}
+                  onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
+                  required
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">
+                  Business type <span className="text-red-500">*</span>
+                </label>
+                <input
+                  className={inputClass}
+                  value={editForm.businessType}
+                  onChange={(e) => setEditForm((f) => ({ ...f, businessType: e.target.value }))}
+                  required
+                  maxLength={120}
+                  placeholder="e.g. Bubble tea café, SaaS"
+                />
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">City</label>
+                  <input
+                    className={inputClass}
+                    value={editForm.city}
+                    onChange={(e) => setEditForm((f) => ({ ...f, city: e.target.value }))}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Country</label>
+                  <input
+                    className={inputClass}
+                    value={editForm.country}
+                    onChange={(e) => setEditForm((f) => ({ ...f, country: e.target.value }))}
+                    required
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Description</label>
+                <textarea
+                  className={`${inputClass} min-h-[6rem]`}
+                  value={editForm.description}
+                  onChange={(e) => setEditForm((f) => ({ ...f, description: e.target.value }))}
+                  rows={4}
+                />
+              </div>
               <button
                 type="submit"
-                disabled={inviting || !inviteEmail.trim()}
-                className="shrink-0 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50 sm:min-h-[42px]"
+                disabled={saving}
+                className="rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50"
               >
-                {inviting ? 'Adding…' : 'Add member'}
+                {saving ? 'Saving…' : 'Save changes'}
               </button>
+            </form>
+          ) : (
+            <div className="mt-4 space-y-2 text-sm text-gray-700">
+              <p>
+                <span className="font-medium text-gray-900">Business type </span>
+                <span className="text-red-500">*</span>
+                {': '}
+                {brand.businessType?.trim() || (
+                  <span className="text-amber-800">Not set — ask an admin to complete brand details.</span>
+                )}
+              </p>
+              <p>{brand.description || 'No description.'}</p>
+              <p className="text-xs text-gray-500">Only admins can edit brand details.</p>
             </div>
-            <p className="text-xs text-gray-500">
-              User must already have an account. No invitation email is sent.
-            </p>
-          </form>
-        )}
+          )}
+        </div>
+      )}
 
-        <ul className="mt-6 divide-y divide-gray-200 border-t border-gray-200">
-          {members.map((m) => (
-            <li
-              key={m.userId}
-              className="flex flex-wrap items-center justify-between gap-3 py-4 first:pt-4"
-            >
-              <div>
-                <p className="font-medium text-gray-900">{m.fullname}</p>
-                <p className="text-sm text-gray-500">{m.email}</p>
-                <span
-                  className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
-                    m.role === 'admin' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-700'
-                  }`}
-                >
-                  {m.role === 'admin' ? 'Admin' : 'Member'}
-                </span>
-              </div>
-              {isAdmin && String(m.userId) !== currentUserId && (
+      {activeTab === 'knowledge' && (
+        <KnowledgeManager brandId={brandId} brandName={brand.name} />
+      )}
+
+      {activeTab === 'assistant' && (
+        <div className={`${shellCard} p-6 h-[600px]`}>
+          <RAGAssistant brandId={brandId} brandName={brand.name} />
+        </div>
+      )}
+
+      {activeTab === 'team' && (
+        <div className={`${shellCard} p-6 md:p-8`}>
+          <h2 className="text-lg font-semibold tracking-tight text-gray-900">Team</h2>
+          <p className="mt-1 text-sm text-gray-600">
+            Members can create campaigns and posts. Only admins can change brand settings or manage
+            members.
+          </p>
+
+          {isAdmin && (
+            <form onSubmit={handleInvite} className="mt-6 space-y-2">
+              <label htmlFor="invite-email" className="block text-sm font-medium text-gray-700">
+                Add by email
+              </label>
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-8">
+                <input
+                  id="invite-email"
+                  type="email"
+                  className={`${inputClass} min-w-0 flex-1`}
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  placeholder="teammate@example.com"
+                />
                 <button
-                  type="button"
-                  onClick={() => handleRemove(m.userId)}
-                  disabled={removingId === m.userId}
-                  className="inline-flex items-center gap-1 rounded-lg border border-transparent bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50"
+                  type="submit"
+                  disabled={inviting || !inviteEmail.trim()}
+                  className="shrink-0 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50 sm:min-h-[42px]"
                 >
-                  <UserMinus className="h-4 w-4" aria-hidden />
-                  Remove
+                  {inviting ? 'Adding…' : 'Add member'}
                 </button>
-              )}
-            </li>
-          ))}
-        </ul>
-      </div>
+              </div>
+              <p className="text-xs text-gray-500">
+                User must already have an account. No invitation email is sent.
+              </p>
+            </form>
+          )}
+
+          <ul className="mt-6 divide-y divide-gray-200 border-t border-gray-200">
+            {members.map((m) => (
+              <li
+                key={m.userId}
+                className="flex flex-wrap items-center justify-between gap-3 py-4 first:pt-4"
+              >
+                <div>
+                  <p className="font-medium text-gray-900">{m.fullname}</p>
+                  <p className="text-sm text-gray-500">{m.email}</p>
+                  <span
+                    className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
+                      m.role === 'admin' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-700'
+                    }`}
+                  >
+                    {m.role === 'admin' ? 'Admin' : 'Member'}
+                  </span>
+                </div>
+                {isAdmin && String(m.userId) !== currentUserId && (
+                  <button
+                    type="button"
+                    onClick={() => handleRemove(m.userId)}
+                    disabled={removingId === m.userId}
+                    className="inline-flex items-center gap-1 rounded-lg border border-transparent bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50"
+                  >
+                    <UserMinus className="h-4 w-4" aria-hidden />
+                    Remove
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

@@ -13,18 +13,30 @@ const router = express.Router();
 
 
 const passport = require('passport');
+const { googleOAuthEnabled } = require('../config/passport');
+
+const requireGoogleOAuth = (req, res, next) => {
+  if (!googleOAuthEnabled) {
+    return next(
+      createError(503, 'Google sign-in is not configured on this server')
+    );
+  }
+  next();
+};
 
 // Google OAuth routes
 router.get(
   '/google',
+  requireGoogleOAuth,
   passport.authenticate('google', { scope: ['profile', 'email'] })
 );
 
 router.get(
   '/google/callback',
-  passport.authenticate('google', { 
+  requireGoogleOAuth,
+  passport.authenticate('google', {
     failureRedirect: '/login',
-    session: false 
+    session: false,
   }),
   (req, res) => {
     try {

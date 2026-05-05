@@ -12,6 +12,7 @@ function resolveAuthApiBase() {
 export const API_URL = resolveAuthApiBase();
 const CONTENT_API_URL = import.meta.env.VITE_CONTENT_API_URL || 'http://localhost:8002';
 const AGENTS_API_URL = import.meta.env.VITE_AGENTS_API_URL || 'http://localhost:8001';
+const RAG_API_URL = import.meta.env.VITE_RAG_API_URL || 'http://localhost:8003';
 
 /** Server origin without `/api` — for static files like `/uploads/...` (and future CDN/S3 you may swap the base). */
 export function authPublicOrigin() {
@@ -52,6 +53,13 @@ const agentsApi = axios.create({
   },
 });
 
+const ragApi = axios.create({
+  baseURL: RAG_API_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
 const attachAuth = (config) => {
   const token = localStorage.getItem('token');
   if (token) {
@@ -66,6 +74,7 @@ const attachAuth = (config) => {
 api.interceptors.request.use(attachAuth);
 contentApi.interceptors.request.use(attachAuth);
 agentsApi.interceptors.request.use(attachAuth);
+ragApi.interceptors.request.use(attachAuth);
 
 export const register = async (userData) => {
   try {
@@ -222,5 +231,63 @@ export const runCampaignAnalysis = async (payload) => {
 /** @param {object} payload */
 export const runCampaignGeneration = async (payload) => {
   const { data } = await agentsApi.post('/api/step3/generate', payload);
+  return data;
+};
+
+// RAG Service API Functions
+export const uploadBrandDocument = async (brandId, file) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  
+  const { data } = await ragApi.post(`/api/brands/${brandId}/knowledge/upload`, formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+  return data;
+};
+
+export const getBrandDocuments = async (brandId) => {
+  const { data } = await ragApi.get(`/api/brands/${brandId}/knowledge/documents`);
+  return data;
+};
+
+export const deleteBrandDocument = async (brandId, documentId) => {
+  const { data } = await ragApi.delete(`/api/brands/${brandId}/knowledge/documents/${documentId}`);
+  return data;
+};
+
+export const getKnowledgeStats = async (brandId) => {
+  const { data } = await ragApi.get(`/api/brands/${brandId}/knowledge/stats`);
+  return data;
+};
+
+export const chatWithAssistant = async (brandId, message, sessionId = null, maxChunks = 5) => {
+  const { data } = await ragApi.post(`/api/brands/${brandId}/assistant/chat`, {
+    message,
+    session_id: sessionId,
+    max_chunks: maxChunks,
+  });
+  return data;
+};
+
+export const getChatHistory = async (brandId, sessionId = null) => {
+  const { data } = await ragApi.get(`/api/brands/${brandId}/assistant/history`, {
+    params: { session_id: sessionId },
+  });
+  return data;
+};
+
+export const validateContent = async (brandId, content) => {
+  const { data } = await ragApi.post(`/api/brands/${brandId}/assistant/validate`, {
+    content,
+  });
+  return data;
+};
+
+export const getContentSuggestions = async (brandId, context = null) => {
+  const { data } = await ragApi.get(`/api/brands/${brandId}/assistant/suggestions`, {
+    params: { context },
+  });
   return data;
 };

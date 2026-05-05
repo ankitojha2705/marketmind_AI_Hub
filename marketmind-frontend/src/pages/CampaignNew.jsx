@@ -20,9 +20,12 @@ import {
   runCampaignGeneration,
   updateCampaignPost,
   updateContentCampaign,
+  chatWithAssistant,
+  validateContent,
 } from '../services/api';
 import BrandAvatar from '../components/BrandAvatar';
 import { getDashboardBrandId, setDashboardBrandId } from '../utils/dashboardBrandStorage';
+import { SparklesIcon, CheckCircleIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 
 const shellCard = 'rounded-2xl border border-gray-200 bg-[hsl(0,0%,99.5%)] shadow-sm';
 const inputClass =
@@ -132,6 +135,13 @@ export default function CampaignNew() {
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [processingMessage, setProcessingMessage] = useState('');
+
+  // RAG Assistant State
+  const [showAssistant, setShowAssistant] = useState(false);
+  const [assistantMessage, setAssistantMessage] = useState('');
+  const [assistantResponse, setAssistantResponse] = useState('');
+  const [assistantLoading, setAssistantLoading] = useState(false);
+  const [validationResults, setValidationResults] = useState(null);
 
   const [name, setName] = useState('');
   const [brief, setBrief] = useState('');
@@ -427,6 +437,34 @@ export default function CampaignNew() {
     } finally {
       setGenerating(false);
       setProcessingMessage('');
+    }
+  };
+
+  // RAG Assistant Functions
+  const handleAskAssistant = async () => {
+    if (!assistantMessage.trim() || !selectedBrandId) return;
+    
+    setAssistantLoading(true);
+    try {
+      const response = await chatWithAssistant(selectedBrandId, assistantMessage);
+      setAssistantResponse(response.response);
+    } catch (error) {
+      toast.error('Failed to get assistant response');
+      console.error('Assistant error:', error);
+    } finally {
+      setAssistantLoading(false);
+    }
+  };
+
+  const handleValidateContent = async (content) => {
+    if (!selectedBrandId) return;
+    
+    try {
+      const validation = await validateContent(selectedBrandId, content);
+      setValidationResults(validation);
+    } catch (error) {
+      toast.error('Failed to validate content');
+      console.error('Validation error:', error);
     }
   };
 
@@ -874,9 +912,60 @@ export default function CampaignNew() {
               <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} />
                           </div>
                           <div>
-              <label className={labelClass}>Campaign brief</label>
+              <div className="flex items-center justify-between mb-2">
+                <label className={labelClass}>Campaign brief</label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowAssistant(!showAssistant)}
+                    className="flex items-center gap-1 px-3 py-1.5 text-sm bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors"
+                  >
+                    <SparklesIcon className="h-4 w-4" />
+                    Ask Assistant
+                  </button>
+                  {brief && (
+                    <button
+                      type="button"
+                      onClick={() => handleValidateContent(brief)}
+                      className="flex items-center gap-1 px-3 py-1.5 text-sm bg-amber-50 text-amber-700 rounded-lg hover:bg-amber-100 transition-colors"
+                    >
+                      <CheckCircleIcon className="h-4 w-4" />
+                      Validate
+                    </button>
+                  )}
+                </div>
+              </div>
               <textarea rows={4} className={inputClass} value={brief} onChange={(e) => setBrief(e.target.value)} />
-                          </div>
+              {validationResults && (
+                <div className="mt-2 p-3 rounded-lg border bg-amber-50 border-amber-200">
+                  <div className="flex items-start gap-2">
+                    <ExclamationTriangleIcon className="h-4 w-4 text-amber-600 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-amber-800">
+                        {validationResults.is_valid ? 'Content looks good!' : 'Content needs attention'}
+                      </p>
+                      {validationResults.issues.length > 0 && (
+                        <ul className="mt-1 text-xs text-amber-700 list-disc list-inside">
+                          {validationResults.issues.map((issue, idx) => (
+                            <li key={idx}>{issue}</li>
+                          ))}
+                        </ul>
+                      )}
+                      {validationResults.suggestions.length > 0 && (
+                        <div className="mt-2">
+                          <p className="text-xs font-medium text-amber-800">Suggestions:</p>
+                          <ul className="mt-1 text-xs text-amber-700 list-disc list-inside">
+                            {validationResults.suggestions.map((suggestion, idx) => (
+                              <li key={idx}>{suggestion}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                           <div>
                 <label className={labelClass}>Start date</label>
@@ -1204,6 +1293,80 @@ export default function CampaignNew() {
           </div>
         ) : null}
       </div>
+
+      {/* RAG Assistant Modal */}
+      {showAssistant && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex min-h-full items-center justify-center p-4">
+            <div className="fixed inset-0 bg-black bg-opacity-50 transition-opacity" onClick={() => setShowAssistant(false)} />
+            <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-xl">
+              <div className="flex items-center justify-between p-6 border-b border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-900">Brand Assistant</h3>
+                <button
+                  onClick={() => setShowAssistant(false)}
+                  className="rounded-lg p-2 text-gray-400 hover:text-gray-600"
+                >
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              
+              <div className="p-6">
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Ask about your brand guidelines, campaign ideas, or content suggestions:
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={assistantMessage}
+                        onChange={(e) => setAssistantMessage(e.target.value)}
+                        onKeyPress={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            handleAskAssistant();
+                          }
+                        }}
+                        placeholder="What tone should we use for our Valentine's promo?"
+                        className="flex-1 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/25"
+                      />
+                      <button
+                        onClick={handleAskAssistant}
+                        disabled={assistantLoading || !assistantMessage.trim()}
+                        className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        {assistantLoading ? (
+                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                        ) : (
+                          'Ask'
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                  
+                  {assistantResponse && (
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                      <h4 className="text-sm font-semibold text-gray-900 mb-2">Assistant Response:</h4>
+                      <div className="text-sm text-gray-700 whitespace-pre-wrap">{assistantResponse}</div>
+                    </div>
+                  )}
+                  
+                  <div className="flex justify-end">
+                    <button
+                      onClick={() => setShowAssistant(false)}
+                      className="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-800 shadow-sm hover:bg-gray-50"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

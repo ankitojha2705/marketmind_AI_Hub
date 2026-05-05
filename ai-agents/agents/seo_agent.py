@@ -30,6 +30,10 @@ class SEOOutput(BaseModel):
     # Additional Optimization
     alt_text_suggestion: Optional[str] = Field(default=None, description="Alt text for image accessibility and SEO")
     location_tags: Optional[List[str]] = Field(default_factory=list, description="Location-based tags for local SEO")
+    optimized_reddit_title: Optional[str] = Field(
+        default=None,
+        description="Reddit only: refined post title (leave null for non-Reddit)",
+    )
 
 
 class PostSEOResult(BaseModel):
@@ -57,28 +61,23 @@ class SEOAgentConfig:
             Configured CrewAI Agent
         """
         return Agent(
-            role="Instagram SEO & Business Strategy Specialist",
-            goal="Optimize Instagram content for maximum discoverability while providing strategic business insights including competitive analysis, audience targeting, and content positioning",
-            backstory="""You are an expert Instagram SEO specialist with deep business strategy knowledge. 
-            
-            You understand:
-            - Instagram's search algorithm and ranking factors
-            - Strategic keyword placement in captions
-            - Mix of high, medium, and low competition hashtags
-            - Location-based optimization for local businesses
-            - Alt text optimization for accessibility and search
-            - Content structure that encourages engagement
-            
-            But you also excel at:
+            role="Social Content SEO & Business Strategy Specialist",
+            goal=(
+                "Optimize social posts for discoverability (Instagram hashtags/search, Reddit title/body and subreddit fit) "
+                "while providing strategic business insights."
+            ),
+            backstory="""You are an expert social SEO specialist with deep business strategy knowledge.
+
+            You understand Instagram's search algorithm, hashtag strategy, and alt text—as well as how Reddit
+            rewards authentic titles, readable selftext, and the right subreddit context (without spam).
+
+            You excel at:
+            - Keyword and structure choices per platform
             - Identifying unique business strengths and value propositions
-            - Understanding target audience demographics and behavior
-            - Analyzing competitor strategies and finding opportunities
-            - Aligning content tone with brand identity and audience preferences
-            - Positioning businesses to stand out in their market
-            
-            You provide actionable insights that combine technical SEO with business strategy,
-            helping businesses not just rank better, but connect better with their audience and
-            differentiate from competitors.""",
+            - Audience and competitor-informed positioning
+            - Clear, human copy that still supports campaign goals
+
+            You combine technical discoverability with business strategy so content connects, not just ranks.""",
             verbose=True,
             allow_delegation=False,
             llm=llm
@@ -90,7 +89,8 @@ class SEOAgentConfig:
         business_type: str,
         location: Optional[str],
         content_data: Dict,
-        campaign_goals: str
+        campaign_goals: str,
+        platform: str = "instagram",
     ) -> Task:
         """
         Creates the SEO optimization task
@@ -101,6 +101,7 @@ class SEOAgentConfig:
             location: Business location (for local SEO)
             content_data: Output from Content Generation Agent
             campaign_goals: Campaign objectives
+            platform: Target platform id (e.g. instagram, reddit)
             
         Returns:
             Configured CrewAI Task
@@ -108,10 +109,67 @@ class SEOAgentConfig:
         caption = content_data.get('caption', '')
         hashtags = content_data.get('hashtags', [])
         post_type = content_data.get('post_type', 'Photo')
+        reddit_title = content_data.get('reddit_title') or content_data.get('redditTitle')
         
         location_info = f"located in {location}" if location else "general location"
-        
-        task_description = f"""
+        plat = (platform or "instagram").strip().lower()
+
+        if plat == "reddit":
+            task_description = f"""
+        Optimize the following REDDIT post for clarity, authenticity, and discoverability within Reddit
+        (post title + body), while providing strategic business insights.
+
+        Business Type: {business_type} {location_info}
+        Campaign Goals: {campaign_goals}
+        Post Type: {post_type}
+
+        Original Content:
+        - Title: {reddit_title or '(none — derive from body)'}
+        - Body (selftext): {caption}
+        - Hashtags (usually ignore for Reddit): {', '.join(hashtags) if hashtags else 'None'}
+
+        Your task is to:
+
+        1. BUSINESS ANALYSIS - Provide ONE insight for each:
+           - Key business strength
+           - Content tone recommendation suited to Reddit (human, not corporate)
+           - Target audience / subreddit personas
+           - Competitor takeaway (how promos usually fail on Reddit and how to do better)
+
+        2. TITLE + BODY OPTIMIZATION:
+           - Produce optimized_caption that is ONLY the post body (selftext), improved for readability and value.
+           - Set optimized_reddit_title to a refined, non-clickbait title (under 300 characters).
+           - Do NOT add Instagram-style hashtag blocks. optimized_hashtags should be [] unless 1-2 are truly meaningful.
+
+        3. DISCOVERABILITY (Reddit-specific):
+           - keyword_suggestions: include 2-5 subreddit name ideas as strings (e.g. "r/AskFood", "r/cityname")
+           - location_tags: reuse for optional local subreddit or geo hints (strings, not # spam)
+
+        4. SEO METRICS:
+           - seo_score 0-100 based on title/body clarity, value, and non-spammy tone
+           - improvements: strings including suggested subreddits and rationale (title itself goes in optimized_reddit_title)
+
+        5. ALT TEXT:
+           - alt_text_suggestion if an image accompanies the post; else null
+
+        Return a JSON object matching this schema exactly:
+        {{
+            "business_strength": "string",
+            "content_tone": "string",
+            "target_audience": "string",
+            "competitor_takeaway": "string",
+            "optimized_caption": "optimized selftext only",
+            "optimized_hashtags": [],
+            "optimized_reddit_title": "refined Reddit title",
+            "keyword_suggestions": ["r/example", "phrase"],
+            "seo_score": 85,
+            "improvements": ["..."],
+            "alt_text_suggestion": "string or null",
+            "location_tags": []
+        }}
+        """
+        else:
+            task_description = f"""
         Optimize the following Instagram content for maximum SEO and discoverability, 
         while providing strategic business insights.
         
@@ -233,7 +291,8 @@ def parse_seo_output(raw_output: str) -> SEOOutput:
                 seo_score=0,
                 improvements=["SEO parsing failed"],
                 alt_text_suggestion=None,
-                location_tags=[]
+                location_tags=[],
+                optimized_reddit_title=None,
             )
     except Exception as e:
         print(f"Error parsing SEO output: {e}")
@@ -271,12 +330,14 @@ def _run_single_seo_agent(
     
     # Create agent and task
     agent = SEOAgentConfig.create_agent(llm)
+    plat = str(content_data.get("platform") or "instagram").strip().lower()
     task = SEOAgentConfig.create_task(
         agent=agent,
         business_type=business_type,
         location=location,
         content_data=content_data,
-        campaign_goals=campaign_goals
+        campaign_goals=campaign_goals,
+        platform=plat,
     )
     
     # Create crew and execute

@@ -39,16 +39,20 @@ class AnalysisAgentConfig:
         """
         return Agent(
             role="Social Media Audience Analyst",
-            goal="Analyze target audience behavior and identify optimal posting strategies for food businesses on Instagram",
+            goal=(
+                "Analyze target audience behavior and identify optimal posting strategies for food businesses "
+                "across selected platforms (Instagram, Reddit, Telegram, etc.)."
+            ),
             backstory="""You are an expert social media analyst specializing in the food industry.
-            You understand Instagram's algorithm, audience behavior patterns, and how food content performs.
+            You understand Instagram's algorithm and visual-feed behavior, Reddit's community and authenticity norms,
+            and how food content performs on each.
             You analyze business types, locations, and goals to provide data-driven insights about:
             - Who the target audience is (age, interests, location)
-            - When they are most active on Instagram
+            - When they are most active on each selected platform
             - What content tone resonates with them
             - How frequently to post for maximum engagement
-            
-            You base your analysis on Instagram best practices, food industry trends, and local market dynamics.""",
+
+            You base your analysis on platform-specific best practices, food industry trends, and local market dynamics.""",
             verbose=True,
             allow_delegation=False,
             llm=llm
@@ -105,27 +109,34 @@ class AnalysisAgentConfig:
            - platforms (array; for now usually all selected platforms)
         
         Consider:
-        - Instagram's algorithm favors consistent posting and high engagement
-        - Food content performs well during meal times and evening browsing hours
+        - Instagram: consistent posting, meal-time peaks, strong visuals, Reels/Stories balance
+        - Reddit: authenticity, value-first posts, subreddit fit, avoid promotional spam; text posts often outperform generic ads
+        - Telegram: concise updates, clear CTAs, channel vs group dynamics if relevant
+        - Food content often performs well during meal times and evening browsing hours
         - Local businesses benefit from community-focused content
-        - Visual appeal is critical for food industry success
-        
+
+        For platform_insights: include keys relevant to the selected platforms. When Reddit is selected, include
+        reddit_focus (e.g. discussion prompts, AMA-style angles, local subreddit ideas) and reddit_caution
+        (e.g. self-promotion rules). When only Instagram is selected, reel_priority / story_frequency / carousel_usage are appropriate.
+
         Format your response as a structured JSON that matches this schema:
         {{
             "objective": "one concise objective",
             "target_audience": "description of audience",
             "content_tone": "recommended tone",
             "platform_insights": {{
-                "story_frequency": "recommendation",
-                "reel_priority": "high/medium/low",
-                "carousel_usage": "recommendation"
+                "story_frequency": "recommendation (Instagram)",
+                "reel_priority": "high/medium/low (Instagram)",
+                "carousel_usage": "recommendation (Instagram)",
+                "reddit_focus": "optional — angles and community fit for Reddit",
+                "reddit_caution": "optional — authenticity and promo rules"
             }},
             "schedule_plan": [
                 {{
                     "seq": 1,
                     "scheduled_at": "2026-01-15T18:00:00Z",
                     "focus": "hook/focus for this post",
-                    "platforms": ["instagram"]
+                    "platforms": ["instagram", "reddit"]
                 }}
             ]
         }}

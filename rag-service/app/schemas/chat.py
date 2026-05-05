@@ -24,7 +24,7 @@ class ChatMessageResponse(BaseModel):
     content: str
     context_chunks: List[UUID]
     created_at: datetime
-    
+
     class Config:
         from_attributes = True
 

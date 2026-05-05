@@ -73,6 +73,10 @@ export function getPlatformInfo(platform) {
       name: 'Reddit',
       bgColor: 'bg-orange-100 text-orange-800',
     },
+    telegram: {
+      name: 'Telegram',
+      bgColor: 'bg-sky-100 text-sky-800',
+    },
     tiktok: {
       name: 'TikTok',
       bgColor: 'bg-slate-100 text-slate-800',

@@ -10,7 +10,7 @@ from ..db import Base
 
 class BrandDocument(Base):
     __tablename__ = "brand_documents"
-    
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     brand_id = Column(String(255), nullable=False)
     filename = Column(String(255), nullable=False)
@@ -20,30 +20,32 @@ class BrandDocument(Base):
     doc_metadata = Column(JSONB, default=dict)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+
     # Relationship to chunks
-    chunks = relationship("DocumentChunk", back_populates="document", cascade="all, delete-orphan")
-    
-    # Indexes
-    __table_args__ = (
-        Index('idx_brand_documents_brand_id', 'brand_id'),
+    chunks = relationship(
+        "DocumentChunk", back_populates="document", cascade="all, delete-orphan"
     )
+
+    # Indexes
+    __table_args__ = (Index("idx_brand_documents_brand_id", "brand_id"),)
 
 
 class DocumentChunk(Base):
     __tablename__ = "document_chunks"
-    
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    document_id = Column(UUID(as_uuid=True), ForeignKey('brand_documents.id', ondelete='CASCADE'), nullable=False)
+    document_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("brand_documents.id", ondelete="CASCADE"),
+        nullable=False,
+    )
     chunk_index = Column(Integer, nullable=False)
     content = Column(Text, nullable=False)
     embedding = Column(Vector(1536), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
-    
+
     # Relationship to document
     document = relationship("BrandDocument", back_populates="chunks")
-    
+
     # Indexes
-    __table_args__ = (
-        Index('idx_document_chunks_document_id', 'document_id'),
-    )
+    __table_args__ = (Index("idx_document_chunks_document_id", "document_id"),)

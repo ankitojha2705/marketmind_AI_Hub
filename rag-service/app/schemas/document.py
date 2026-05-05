@@ -21,7 +21,7 @@ class DocumentResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     doc_metadata: Dict[str, Any]
-    
+
     class Config:
         from_attributes = True
 
@@ -37,7 +37,7 @@ class ChunkResponse(BaseModel):
     chunk_index: int
     content: str
     created_at: datetime
-    
+
     class Config:
         from_attributes = True
 

@@ -48,18 +48,12 @@ async def health():
 @app.get("/")
 async def root():
     """Root endpoint"""
-    return {
-        "message": "MarketMind RAG Service",
-        "version": "1.0.0",
-        "docs": "/docs"
-    }
+    return {"message": "MarketMind RAG Service", "version": "1.0.0", "docs": "/docs"}
 
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(
-        "app.main:app",
-        host="0.0.0.0",
-        port=settings.port,
-        reload=settings.debug
+        "app.main:app", host="0.0.0.0", port=settings.port, reload=settings.debug
     )

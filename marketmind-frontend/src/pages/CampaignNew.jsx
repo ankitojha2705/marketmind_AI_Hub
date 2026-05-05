@@ -5,6 +5,7 @@ import {
   FaInstagram,
   FaLinkedinIn,
   FaReddit,
+  FaTelegram,
   FaTrash,
   FaXTwitter,
 } from 'react-icons/fa6';
@@ -36,7 +37,8 @@ const POST_COUNT_MAX = 5;
 const allPlatforms = [
   { id: 'instagram', name: 'Instagram', Icon: FaInstagram, implemented: true },
   { id: 'twitter', name: 'X (Twitter)', Icon: FaXTwitter, implemented: false },
-  { id: 'reddit', name: 'Reddit', Icon: FaReddit, implemented: false },
+  { id: 'reddit', name: 'Reddit', Icon: FaReddit, implemented: true },
+  { id: 'telegram', name: 'Telegram', Icon: FaTelegram, implemented: true },
   { id: 'facebook', name: 'Facebook', Icon: FaFacebook, implemented: false },
   { id: 'linkedin', name: 'LinkedIn', Icon: FaLinkedinIn, implemented: false },
 ];
@@ -106,6 +108,7 @@ const platformIconMap = {
   instagram: FaInstagram,
   twitter: FaXTwitter,
   reddit: FaReddit,
+  telegram: FaTelegram,
   facebook: FaFacebook,
   linkedin: FaLinkedinIn,
 };
@@ -397,23 +400,32 @@ export default function CampaignNew() {
             Number(s.schedule_seq) === Number(p.schedule_seq) &&
             String(s.platform) === String(p.platform)
         );
+        const planEntry = (analysis.schedulePlan || []).find(
+          (x) => Number(x.seq) === Number(p.schedule_seq)
+        );
+        const opt = seo?.optimized || {};
+        const redditTitle =
+          (p.platform || '').toLowerCase() === 'reddit'
+            ? opt.optimized_reddit_title || p.reddit_title || ''
+            : '';
         return {
           scheduleSeq: Number(p.schedule_seq || idx + 1),
           platform: p.platform || 'instagram',
           scheduledAt:
-            p.scheduled_at || analysis.schedulePlan[idx]?.scheduledAt || dateInputToIso(startDate),
-          focus: p.focus || analysis.schedulePlan[idx]?.focus || '',
+            p.scheduled_at || planEntry?.scheduledAt || dateInputToIso(startDate),
+          focus: p.focus || planEntry?.focus || '',
           caption: p.caption || '',
           hashtags: p.hashtags || [],
           selectedHashtags: (p.hashtags || []).slice(0, 5),
           postType: p.post_type || 'Photo',
           callToAction: p.call_to_action || '',
-          seo: seo?.optimized || {},
+          seo: opt,
           media: {
             imagePrompt: p.image_prompt || null,
             imageUrl: p.image_url || null,
             mediaPrompts: p.media_prompts || [],
             notes: p.notes || '',
+            redditTitle: redditTitle || undefined,
           },
         };
       });
@@ -1245,6 +1257,29 @@ export default function CampaignNew() {
       </div>
                   );
                 })()}
+                {String(p.platform || '').toLowerCase() === 'reddit' ? (
+                  <div>
+                    <label className={labelClass}>Reddit title</label>
+                    <input
+                      type="text"
+                      className={inputClass}
+                      maxLength={300}
+                      value={p.media?.redditTitle || p.media?.reddit_title || ''}
+                      onChange={(e) =>
+                        setPosts((curr) =>
+                          curr.map((x) =>
+                            x.id === p.id
+                              ? {
+                                  ...x,
+                                  media: { ...(x.media || {}), redditTitle: e.target.value },
+                                }
+                              : x
+                          )
+                        )
+                      }
+                    />
+                  </div>
+                ) : null}
                 <textarea
                   rows={4}
                   className={inputClass}

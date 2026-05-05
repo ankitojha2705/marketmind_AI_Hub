@@ -1,0 +1,16 @@
+# Python cache / bytecode (any depth under rag-service)
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+.venv/
+
+# Env files (keep .env.example tracked)
+.env
+
+# Tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

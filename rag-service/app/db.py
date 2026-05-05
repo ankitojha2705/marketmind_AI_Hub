@@ -13,14 +13,12 @@ class Base(DeclarativeBase):
 engine = create_async_engine(
     settings.database_url.replace("postgresql://", "postgresql+asyncpg://"),
     echo=settings.debug,
-    future=True
+    future=True,
 )
 
 # Create session factory
 AsyncSessionLocal = async_sessionmaker(
-    engine,
-    class_=AsyncSession,
-    expire_on_commit=False
+    engine, class_=AsyncSession, expire_on_commit=False
 )
 
 
@@ -37,7 +35,7 @@ async def ensure_vector_extension():
     """Ensure pgvector extension is enabled"""
     conn = await asyncpg.connect(settings.database_url)
     try:
-        await conn.execute('CREATE EXTENSION IF NOT EXISTS vector')
+        await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
     finally:
         await conn.close()
 
@@ -45,6 +43,6 @@ async def ensure_vector_extension():
 async def ensure_indexes():
     """Create necessary database indexes"""
     await ensure_vector_extension()
-    
+
     # Indexes will be created via Alembic migrations
     pass
